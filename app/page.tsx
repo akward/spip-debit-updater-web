@@ -1,134 +1,198 @@
+"use client";
+
+import { useState } from "react";
+
 const GROUPS = [
-  { id: "debit", title: "Debit / ATM", desc: "Kartu, mesin, belanja, transfer, tarik/setor tunai", cmd: "python main.py --prepare -g debit" },
-  { id: "ue", title: "Uang Elektronik", desc: "Jumlah UE, belanja, topup, transfer, redeem", cmd: "python main.py --prepare -g ue" },
-  { id: "kk", title: "Kartu Kredit", desc: "Jumlah kartu, outstanding, NPL, transaksi", cmd: "python main.py --prepare -g kk" },
-  { id: "acquirer", title: "Acquirer", desc: "EDC/Merchant matrix + OnUs/OffUs/Internasional", cmd: "python main.py --prepare -g acquirer" },
-  { id: "prop_channel", title: "Prop Channel", desc: "Phone / Mobile / Internet dari Delivery Channel.xlsx", cmd: "python main.py --prepare -g prop_channel" },
-  { id: "fraud_bank", title: "Fraud per Bank", desc: "Fraud KK, ATM, UE per bank", cmd: "python main.py --prepare -g fraud_bank" },
-  { id: "fraud_penyebab", title: "Fraud per Penyebab", desc: "Fraud per jenis penyebab", cmd: "python main.py --prepare -g fraud_penyebab" },
+  { id: "debit", title: "Debit / ATM", note: "Upload CSV dari folder ATM" },
 ];
 
+type ProcessResponse = {
+  ok: boolean;
+  error?: string;
+  monthLabel?: string;
+  dryRun?: boolean;
+  files?: { name: string; rows: number }[];
+  results?: Array<Record<string, unknown>>;
+};
+
 export default function HomePage() {
+  const [group, setGroup] = useState("debit");
+  const [files, setFiles] = useState<FileList | null>(null);
+  const [monthLabel, setMonthLabel] = useState("");
+  const [dryRun, setDryRun] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [log, setLog] = useState<ProcessResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLog(null);
+    if (!files?.length) {
+      setError("Pilih minimal 1 file CSV.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const fd = new FormData();
+      fd.set("group", group);
+      fd.set("dryRun", dryRun ? "1" : "0");
+      if (monthLabel.trim()) fd.set("monthLabel", monthLabel.trim());
+      Array.from(files).forEach((f) => fd.append("files", f));
+      const res = await fetch("/api/process", { method: "POST", body: fd });
+      const data = (await res.json()) as ProcessResponse;
+      if (!res.ok || !data.ok) {
+        setError(data.error || "Gagal memproses");
+      }
+      setLog(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <main className="container">
       <header className="header">
         <div>
           <h1>SPIP Debit Updater</h1>
           <p>
-            Panel dokumentasi & kontrol alur update Google Sheets SPIP
-            (Debit, UE, KK, Acquirer, Prop Channel, Fraud).
+            Upload CSV → proses otomatis → update Google Sheets.
+            Mode dry-run disarankan dulu sebelum menulis ke sheet.
           </p>
         </div>
-        <span className="badge">Web dashboard · job tetap di PC lokal</span>
+        <span className="badge">Web + upload CSV</span>
       </header>
 
       <section className="panel">
-        <h2>Penting tentang arsitektur</h2>
+        <h2>1. Upload & proses</h2>
+        <form onSubmit={onSubmit}>
+          <div style={{ display: "grid", gap: 12, maxWidth: 560 }}>
+            <label>
+              Group
+              <select
+                value={group}
+                onChange={(e) => setGroup(e.target.value)}
+                style={{ display: "block", width: "100%", marginTop: 6, padding: 10, borderRadius: 8 }}
+              >
+                {GROUPS.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              File CSV (bisa banyak)
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                multiple
+                onChange={(e) => setFiles(e.target.files)}
+                style={{ display: "block", marginTop: 6 }}
+              />
+            </label>
+
+            <label>
+              Label bulan (opsional, default = bulan sistem − 1)
+              <input
+                type="text"
+                placeholder="contoh: Juli 2026"
+                value={monthLabel}
+                onChange={(e) => setMonthLabel(e.target.value)}
+                style={{ display: "block", width: "100%", marginTop: 6, padding: 10, borderRadius: 8 }}
+              />
+            </label>
+
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={dryRun}
+                onChange={(e) => setDryRun(e.target.checked)}
+              />
+              Dry-run (jangan tulis ke Google Sheet, hanya cek mapping)
+            </label>
+
+            <button className="btn primary" type="submit" disabled={loading}>
+              {loading ? "Memproses…" : dryRun ? "Cek mapping (dry-run)" : "Proses & update Sheet"}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {error && (
+        <section className="panel">
+          <div className="warn">{error}</div>
+        </section>
+      )}
+
+      {log && (
+        <section className="panel">
+          <h2>Hasil</h2>
+          <p style={{ color: "var(--muted)" }}>
+            Bulan: <code>{log.monthLabel}</code>
+            {log.dryRun ? " · dry-run" : " · write"}
+          </p>
+          {log.files && (
+            <div className="cmd">
+              {log.files.map((f) => `${f.name} (${f.rows} rows)`).join("\n")}
+            </div>
+          )}
+          <table>
+            <thead>
+              <tr>
+                <th>Job</th>
+                <th>Status</th>
+                <th>Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(log.results || []).map((r, i) => (
+                <tr key={i}>
+                  <td>{String(r.job)}</td>
+                  <td>{String(r.status)}</td>
+                  <td>
+                    <code style={{ fontSize: 12 }}>
+                      {JSON.stringify(
+                        Object.fromEntries(
+                          Object.entries(r).filter(([k]) => !["job", "status"].includes(k))
+                        )
+                      )}
+                    </code>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      <section className="panel">
+        <h2>2. Environment Vercel (wajib untuk write)</h2>
         <div className="warn">
-          Vercel <strong>tidak bisa</strong> membaca folder lokal
-          <code> D:\Pengolahan Data\ </code> atau menjalankan 80+ task Google Sheets
-          dalam satu request (timeout serverless).
-          <br />
-          Dashboard ini membantu memilih group & perintah. Eksekusi penuh tetap di PC:
-          <code> python main.py --prepare -g …</code>
+          Di Vercel Project → Settings → Environment Variables, set:
+          <div className="cmd">GOOGLE_CREDENTIALS_JSON={"{"} ... JSON service account ... {"}"}
+SHEET_DEBIT=1P5EQlpQ-EJOuVIUq52Jow1ciH0-vQKLAHT1xuwflKQo</div>
+          Share spreadsheet Google ke email <code>client_email</code> service account (Editor).
         </div>
         <div className="ok" style={{ marginTop: 12 }}>
-          Alur yang benar: <strong>prepare CSV→Excel</strong> dulu, baru{" "}
-          <strong>update Google Sheet</strong>. Kalau Excel belum ada, sistem akan
-          menyalin angka bulan sebelumnya.
+          Tanpa env di atas, dry-run tetap bisa dipakai untuk cek apakah CSV ter-mapping.
         </div>
       </section>
 
-      <h2 style={{ marginBottom: 8 }}>Group laporan</h2>
-      <div className="grid">
-        {GROUPS.map((g) => (
-          <article key={g.id} className="card">
-            <h3>{g.title}</h3>
-            <p>{g.desc}</p>
-            <p style={{ marginTop: 10 }}>
-              <code>{g.cmd}</code>
-            </p>
-          </article>
-        ))}
-      </div>
-
       <section className="panel">
-        <h2>Perintah cepat di PC</h2>
-        <ol className="steps">
-          <li>
-            Pastikan <code>config.yaml</code> → <code>paths.month</code> sesuai folder CSV
-            (mis. <code>Juli</code>).
-          </li>
-          <li>Siapkan semua Excel dari CSV:</li>
-        </ol>
-        <div className="cmd">cd D:\Pengolahan Data\SPIP Python\debit_updater
-python main.py --prepare-only</div>
-        <ol className="steps" start={3}>
-          <li>Update Google Sheet (semua group):</li>
-        </ol>
-        <div className="cmd">python main.py</div>
-        <ol className="steps" start={4}>
-          <li>Atau satu group (contoh debit):</li>
-        </ol>
-        <div className="cmd">python main.py --prepare -g debit</div>
-      </section>
-
-      <section className="panel">
-        <h2>Checklist sebelum update</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Cek</th>
-              <th>Lokasi</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>CSV sumber bulan berjalan</td>
-              <td>
-                <code>D:\Pengolahan Data\2026\[bulan]\ATM | UE | KK | infra | Kanal | Fraud</code>
-              </td>
-            </tr>
-            <tr>
-              <td>Hasil prepare Excel</td>
-              <td>
-                <code>D:\Pengolahan Data\xlsx\debit | UE | KK | Acquirer | …</code>
-              </td>
-            </tr>
-            <tr>
-              <td>Credentials Google</td>
-              <td>
-                <code>D:\google\credential\credentials.json</code> + share sheet ke service account
-              </td>
-            </tr>
-            <tr>
-              <td>Log prepare</td>
-              <td>
-                Harus ada baris <code>OK</code>, bukan <code>FAIL</code> / <code>MISS</code>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <section className="panel">
-        <h2>Repo & CLI package</h2>
-        <p style={{ color: "var(--muted)", marginTop: 0, lineHeight: 1.55 }}>
-          Kode CLI Python (prepare + update) ada di package lokal. Dashboard web ini
-          terpisah sebagai dokumentasi operasional.
-        </p>
-        <div className="btn-row">
-          <a className="btn primary" href="https://github.com/akward/spip-debit-updater-web" target="_blank" rel="noreferrer">
-            Buka GitHub
-          </a>
-          <a className="btn" href="/api/health">
-            Health API
-          </a>
-        </div>
+        <h2>Batasan</h2>
+        <ul className="steps">
+          <li>Group web saat ini: <strong>debit</strong> (UE/KK bisa ditambah pola sama).</li>
+          <li>Timeout Vercel Hobby ~60 detik — proses per group.</li>
+          <li>Mesin ATM matrix & LSBU merge belum di web (tetap CLI lokal).</li>
+        </ul>
       </section>
 
       <footer className="footer">
-        SPIP Debit Updater Web · Next.js on Vercel · Job data tetap di mesin lokal
+        SPIP Debit Updater Web · upload CSV · Google Sheets API
       </footer>
     </main>
   );
