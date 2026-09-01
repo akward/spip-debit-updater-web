@@ -1,13 +1,10 @@
 import * as XLSX from "xlsx";
 import type { Row } from "./parse";
 
-/** Parse LSBU .xlsx from in-memory ArrayBuffer (tidak disimpan ke disk). */
 export function parseLsbuXlsx(buf: ArrayBuffer): Row[] {
   const wb = XLSX.read(buf, { type: "array" });
   const sheet = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-    defval: "",
-  });
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
   return rows.map((r) => {
     const out: Row = {};
     for (const [k, v] of Object.entries(r)) {
@@ -26,54 +23,79 @@ function pick(row: Row, names: string[]): string | undefined {
   return undefined;
 }
 
-/**
- * Merge LSBU FORMA0302 into debit value maps (in-memory).
- * kartu_atm ← KARTU_ATM, kartu_debit ← KARTU_ATM_DEBIT
- * filter: JENIS_DATA 001-Jumlah Kartu, KOTA = -
- */
+export function detectLsbuKind(
+  filename: string,
+  rows: Row[]
+): "forma0302" | "forma0304" | "unknown" {
+  const n = filename.toLowerCase();
+  if (n.includes("0302")) return "forma0302";
+  if (n.includes("0304")) return "forma0304";
+  if (rows[0] && pick(rows[0], ["JENIS_DATA"])) return "forma0302";
+  if (rows[0] && pick(rows[0], ["JENIS_MESIN"])) return "forma0304";
+  return "unknown";
+}
+
 export function mergeLsbuDebit(
   lsbuRows: Row[],
-  maps: {
-    kartuAtm?: Map<string, number>;
-    kartuDebit?: Map<string, number>;
-  }
+  maps: { kartuAtm?: Map<string, number>; kartuDebit?: Map<string, number> }
 ): { addedAtm: number; addedDebit: number } {
   let addedAtm = 0;
   let addedDebit = 0;
-
   for (const row of lsbuRows) {
     const jenis = (pick(row, ["JENIS_DATA", "jenis_data"]) || "").trim();
     const kota = (pick(row, ["KOTA", "kota"]) || "").trim();
     if (kota !== "-" && kota !== "") continue;
     if (!jenis.includes("001-Jumlah Kartu") && !jenis.startsWith("001")) continue;
-
-    const id = (pick(row, ["SANDI_PELAPOR", "idpelapor", "sandi_pelapor"]) || "")
+    const id = (pick(row, ["SANDI_PELAPOR", "idpelapor"]) || "")
       .replace(/\.0$/, "")
       .trim();
     if (!id) continue;
-
     if (maps.kartuAtm) {
-      const v = Number(
-        String(pick(row, ["KARTU_ATM", "kartu_atm"]) || "0").replace(/,/g, "")
-      );
+      const v = Number(String(pick(row, ["KARTU_ATM"]) || "0").replace(/,/g, ""));
       if (Number.isFinite(v) && v !== 0) {
         maps.kartuAtm.set(id, (maps.kartuAtm.get(id) || 0) + v);
         addedAtm++;
       }
     }
     if (maps.kartuDebit) {
-      const v = Number(
-        String(pick(row, ["KARTU_ATM_DEBIT", "kartu_atm_debit"]) || "0").replace(
-          /,/g,
-          ""
-        )
-      );
+      const v = Number(String(pick(row, ["KARTU_ATM_DEBIT"]) || "0").replace(/,/g, ""));
       if (Number.isFinite(v) && v !== 0) {
         maps.kartuDebit.set(id, (maps.kartuDebit.get(id) || 0) + v);
         addedDebit++;
       }
     }
   }
-
   return { addedAtm, addedDebit };
 }
+
+export function mergeLsbuAcquirer(
+  lsbuRows: Row[],
+  targetJenis: string,
+  map: Map<string, number>,
+  valueField: string = "JUMLAH_MESIN"
+): number {
+  let added = 0;
+  for (const row of lsbuRows) {
+    const jenis = (pick(row, ["JENIS_MESIN", "jenis_mesin"]) || "").trim();
+    const kota = (pick(row, ["KOTA", "kota"]) || "").trim();
+    if (kota !== "-" && kota !== "") continue;
+    if (jenis !== targetJenis && !jenis.includes(targetJenis)) continue;
+    const id = (pick(row, ["SANDI_PELAPOR", "idpelapor"]) || "")
+      .replace(/\.0$/, "")
+      .trim();
+    if (!id) continue;
+    const v = Number(String(pick(row, [valueField]) || "0").replace(/,/g, ""));
+    if (Number.isFinite(v) && v !== 0) {
+      map.set(id, (map.get(id) || 0) + v);
+      added++;
+    }
+  }
+  return added;
+}
+
+export const ACQUIRER_LSBU_JENIS: { hints: string[]; jenis: string }[] = [
+  { hints: ["debet", "debit"], jenis: "02-Point Of Sale Kartu Debit" },
+  { hints: ["kredit"], jenis: "01-Point Of Sale Kartu Kredit" },
+  { hints: ["ue"], jenis: "03-Point Of Sale Uang Elektronik" },
+  { hints: ["gabungan"], jenis: "09-Point Of Sale Gabungan" },
+];
