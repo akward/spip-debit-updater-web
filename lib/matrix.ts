@@ -1,0 +1,323 @@
+import { getSheetsClient } from "./sheets";
+import type { Row } from "./parse";
+
+function colToA1(col: number): string {
+  let n = col;
+  let s = "";
+  while (n > 0) {
+    const m = (n - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+async function sleep(ms: number) {
+  await new Promise((r) => setTimeout(r, ms));
+}
+
+async function withRetry<T>(fn: () => Promise<T>, tries = 5): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      last = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/429|Quota|rate|502|503|timeout/i.test(msg) || i === tries - 1) throw e;
+      await sleep(1500 * (i + 1));
+    }
+  }
+  throw last;
+}
+
+function pick(row: Row, names: string[]): string | undefined {
+  const keys = Object.keys(row);
+  for (const n of names) {
+    const found = keys.find((k) => k.trim().toLowerCase() === n.toLowerCase());
+    if (found && row[found] !== "") return row[found];
+  }
+  return undefined;
+}
+
+const ATM_TYPE_MAP: Record<string, number> = {
+  ACMAT: 0,
+  ACMCD: 1,
+  ACMAC: 2,
+  ACMNT: 3,
+};
+const ATM_SUB = ["ATM", "CDM", "ATM+CDM", "Non Tunai", "Total Mesin"];
+
+/**
+ * Jumlah Mesin ATM — blok 5 kolom per bulan (CLI mesin.py).
+ * CSV/rows: idpelapor, jenismesin (ACMAT/ACMCD/ACMAC/ACMNT), expr_1
+ */
+export async function updateMesinAtmMatrix(opts: {
+  spreadsheetId: string;
+  sheetName?: string;
+  monthLabel: string;
+  rows: Row[];
+  headerBulanRow?: number;
+  headerColRow?: number;
+  dataStartRow?: number;
+}): Promise<{ written: number; appended: number; mode: string }> {
+  const {
+    spreadsheetId,
+    sheetName = "Jumlah Mesin ATM",
+    monthLabel,
+    rows,
+    headerBulanRow = 3,
+    headerColRow = 4,
+    dataStartRow = 5,
+  } = opts;
+
+  const sheets = await getSheetsClient();
+  const res = await withRetry(() =>
+    sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `'${sheetName}'!A1:ZZ`,
+      majorDimension: "ROWS",
+    })
+  );
+  const sheetValues = res.data.values || [];
+  if (sheetValues.length < headerColRow) {
+    throw new Error(`Sheet ${sheetName} terlalu pendek`);
+  }
+
+  const subHeaders = sheetValues[headerColRow - 1].map((h) => String(h ?? ""));
+  const bulanRow = (sheetValues[headerBulanRow - 1] || []).map((h) => String(h ?? ""));
+
+  // Aggregate source by id → [atm,cdm,atmcdm,nontunai,total]
+  const byId = new Map<string, number[]>();
+  for (const r of rows) {
+    const id = String(pick(r, ["idpelapor", "SANDI_PELAPOR"]) || "")
+      .replace(/\.0$/, "")
+      .trim();
+    if (!id) continue;
+    const jenis = String(pick(r, ["jenismesin", "jenis_mesin"]) || "ACMAT")
+      .trim()
+      .toUpperCase();
+    const val = Number(String(pick(r, ["expr_1", "jumlah"]) || "0").replace(/,/g, ""));
+    if (!Number.isFinite(val)) continue;
+    if (!byId.has(id)) byId.set(id, [0, 0, 0, 0, 0]);
+    const arr = byId.get(id)!;
+    const idx = ATM_TYPE_MAP[jenis];
+    if (idx !== undefined) arr[idx] += val;
+    arr[4] = arr[0] + arr[1] + arr[2] + arr[3];
+  }
+
+  let startCol0: number; // 0-based
+  if (bulanRow.includes(monthLabel)) {
+    startCol0 = bulanRow.indexOf(monthLabel);
+  } else if (subHeaders.includes(monthLabel)) {
+    startCol0 = subHeaders.indexOf(monthLabel);
+  } else {
+    startCol0 = Math.max(subHeaders.length, bulanRow.length);
+    await withRetry(() =>
+      sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `'${sheetName}'!${colToA1(startCol0 + 1)}${headerBulanRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [[monthLabel]] },
+      })
+    );
+    await withRetry(() =>
+      sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `'${sheetName}'!${colToA1(startCol0 + 1)}${headerColRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [ATM_SUB] },
+      })
+    );
+  }
+
+  const dataRows = sheetValues.slice(dataStartRow - 1);
+  const matrix: number[][] = [];
+  const existing = new Set<string>();
+
+  for (const row of dataRows) {
+    const raw = row?.[0];
+    if (raw === undefined || raw === null || String(raw).trim() === "") {
+      matrix.push([0, 0, 0, 0, 0]);
+      continue;
+    }
+    const id = String(raw).replace(/\.0$/, "").trim();
+    existing.add(id);
+    existing.add(String(Number(id)));
+    const vals = byId.get(id) || byId.get(String(Number(id))) || [0, 0, 0, 0, 0];
+    matrix.push([...vals]);
+  }
+
+  if (matrix.length) {
+    await withRetry(() =>
+      sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `'${sheetName}'!${colToA1(startCol0 + 1)}${dataStartRow}:${colToA1(startCol0 + 5)}${dataStartRow + matrix.length - 1}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: matrix },
+      })
+    );
+  }
+
+  let appended = 0;
+  for (const [id, vals] of byId.entries()) {
+    if (vals[4] <= 0) continue;
+    if (existing.has(id) || existing.has(String(Number(id)))) continue;
+    const newRow: (string | number)[] = Array(startCol0 + 5).fill("");
+    newRow[0] = Number.isFinite(Number(id)) ? Number(id) : id;
+    for (let i = 0; i < 5; i++) newRow[startCol0 + i] = vals[i];
+    await withRetry(() =>
+      sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `'${sheetName}'!A${dataStartRow}`,
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: { values: [newRow] },
+      })
+    );
+    appended++;
+  }
+
+  await sleep(400);
+  return { written: matrix.length, appended, mode: "matrix-atm" };
+}
+
+const EDC_SUB = ["Open Loop", "Close Loop", "Total"];
+
+/**
+ * EDC matrix 3 kolom: Open Loop / Close Loop / Total (statusmesin OL/CL).
+ * rows: idpelapor, statusmesin, expr_1 (mesin) — total = OL+CL for expr_1 only in simple form.
+ */
+export async function updateEdcMatrix(opts: {
+  spreadsheetId: string;
+  sheetName: string;
+  monthLabel: string;
+  rows: Row[];
+  valueField?: string; // expr_1 default (jumlah mesin)
+  headerBulanRow?: number;
+  headerColRow?: number;
+  dataStartRow?: number;
+}): Promise<{ written: number; appended: number; mode: string }> {
+  const {
+    spreadsheetId,
+    sheetName,
+    monthLabel,
+    rows,
+    valueField = "expr_1",
+    headerBulanRow = 3,
+    headerColRow = 4,
+    dataStartRow = 5,
+  } = opts;
+
+  const sheets = await getSheetsClient();
+  const res = await withRetry(() =>
+    sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `'${sheetName}'!A1:ZZ`,
+      majorDimension: "ROWS",
+    })
+  );
+  const sheetValues = res.data.values || [];
+  if (sheetValues.length < headerColRow) {
+    throw new Error(`Sheet ${sheetName} terlalu pendek`);
+  }
+
+  const subHeaders = sheetValues[headerColRow - 1].map((h) => String(h ?? ""));
+  const bulanRow = (sheetValues[headerBulanRow - 1] || []).map((h) => String(h ?? ""));
+
+  // id → [open, close, total]
+  const byId = new Map<string, number[]>();
+  for (const r of rows) {
+    const id = String(pick(r, ["idpelapor", "SANDI_PELAPOR"]) || "")
+      .replace(/\.0$/, "")
+      .trim();
+    if (!id) continue;
+    let status = String(pick(r, ["statusmesin", "status_mesin"]) || "OL")
+      .trim()
+      .toUpperCase();
+    if (status === "OPEN LOOP" || status === "OPEN") status = "OL";
+    if (status === "CLOSE LOOP" || status === "CLOSE" || status === "CLOSED") status = "CL";
+    const val = Number(String(pick(r, [valueField, "expr_1"]) || "0").replace(/,/g, ""));
+    if (!Number.isFinite(val)) continue;
+    if (!byId.has(id)) byId.set(id, [0, 0, 0]);
+    const arr = byId.get(id)!;
+    if (status === "CL") arr[1] += val;
+    else arr[0] += val;
+    arr[2] = arr[0] + arr[1];
+  }
+
+  let startCol0: number;
+  if (bulanRow.includes(monthLabel)) {
+    startCol0 = bulanRow.indexOf(monthLabel);
+  } else if (subHeaders.includes(monthLabel)) {
+    startCol0 = subHeaders.indexOf(monthLabel);
+  } else {
+    startCol0 = Math.max(subHeaders.length, bulanRow.length);
+    await withRetry(() =>
+      sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `'${sheetName}'!${colToA1(startCol0 + 1)}${headerBulanRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [[monthLabel]] },
+      })
+    );
+    await withRetry(() =>
+      sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `'${sheetName}'!${colToA1(startCol0 + 1)}${headerColRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [EDC_SUB] },
+      })
+    );
+  }
+
+  const dataRows = sheetValues.slice(dataStartRow - 1);
+  const matrix: number[][] = [];
+  const existing = new Set<string>();
+
+  for (const row of dataRows) {
+    const raw = row?.[0];
+    if (raw === undefined || raw === null || String(raw).trim() === "") {
+      matrix.push([0, 0, 0]);
+      continue;
+    }
+    const id = String(raw).replace(/\.0$/, "").trim();
+    existing.add(id);
+    existing.add(String(Number(id)));
+    const vals = byId.get(id) || byId.get(String(Number(id))) || [0, 0, 0];
+    matrix.push([...vals]);
+  }
+
+  if (matrix.length) {
+    await withRetry(() =>
+      sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `'${sheetName}'!${colToA1(startCol0 + 1)}${dataStartRow}:${colToA1(startCol0 + 3)}${dataStartRow + matrix.length - 1}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: matrix },
+      })
+    );
+  }
+
+  let appended = 0;
+  for (const [id, vals] of byId.entries()) {
+    if (vals[2] <= 0) continue;
+    if (existing.has(id) || existing.has(String(Number(id)))) continue;
+    const newRow: (string | number)[] = Array(startCol0 + 3).fill("");
+    newRow[0] = Number.isFinite(Number(id)) ? Number(id) : id;
+    for (let i = 0; i < 3; i++) newRow[startCol0 + i] = vals[i];
+    await withRetry(() =>
+      sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `'${sheetName}'!A${dataStartRow}`,
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: { values: [newRow] },
+      })
+    );
+    appended++;
+  }
+
+  await sleep(400);
+  return { written: matrix.length, appended, mode: "matrix-edc" };
+}
