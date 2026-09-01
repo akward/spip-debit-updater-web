@@ -7,6 +7,7 @@ import { GROUPS } from "@/lib/tasks";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+/** CSV hanya di memori selama request — tidak ke disk/Blob/DB. */
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
@@ -19,7 +20,10 @@ export async function POST(req: NextRequest) {
     const jobs = GROUPS[group];
     if (!jobs) {
       return NextResponse.json(
-        { ok: false, error: `Group tidak didukung di web: ${group}. Saat ini: ${Object.keys(GROUPS).join(", ")}` },
+        {
+          ok: false,
+          error: `Group tidak didukung: ${group}. Tersedia: ${Object.keys(GROUPS).join(", ")}`,
+        },
         { status: 400 }
       );
     }
@@ -35,8 +39,7 @@ export async function POST(req: NextRequest) {
     const parsed: { name: string; rows: ReturnType<typeof parseCsvText> }[] = [];
     for (const f of files) {
       const text = await f.text();
-      const rows = parseCsvText(text);
-      parsed.push({ name: f.name, rows });
+      parsed.push({ name: f.name, rows: parseCsvText(text) });
     }
 
     const results: Array<Record<string, unknown>> = [];
@@ -47,7 +50,7 @@ export async function POST(req: NextRequest) {
         results.push({
           job: job.name,
           status: "skip",
-          reason: `Tidak ada CSV yang cocok untuk hints: ${job.fileHints.join(", ")}`,
+          reason: `Tidak ada CSV yang cocok: ${job.fileHints.join(", ")}`,
         });
         continue;
       }
@@ -66,7 +69,6 @@ export async function POST(req: NextRequest) {
       }
 
       if (dryRun) {
-        const sample = [...map.entries()].slice(0, 5);
         results.push({
           job: job.name,
           status: "dry-run",
@@ -74,7 +76,7 @@ export async function POST(req: NextRequest) {
           file: file.name,
           ids: map.size,
           monthLabel,
-          sample,
+          sample: [...map.entries()].slice(0, 5),
         });
         continue;
       }
@@ -111,6 +113,7 @@ export async function POST(req: NextRequest) {
       group,
       monthLabel,
       dryRun,
+      storage: "none — CSV hanya di memori selama request",
       files: parsed.map((p) => ({ name: p.name, rows: p.rows.length })),
       results,
     });
