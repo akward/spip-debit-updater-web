@@ -2,49 +2,61 @@
 
 import { useState } from "react";
 
-/** Group + file LSBU yang dipakai (sesuai prepare CLI) */
+/**
+ * LSBU per group — sesuai notebook:
+ * - debit_google sheet.ipynb
+ * - UE_google sheet.ipynb
+ * - KK Antasena_google sheet.ipynb
+ * - Acquirer Tahun 2026 (r)_google sheet.ipynb
+ * - fraud per bank / Fraud Per Penyebab_google sheet.ipynb
+ */
 const GROUPS = [
   {
     id: "debit",
     title: "Debit / ATM",
     lsbu: "LSBU_VW_FORMA0302.xlsx",
-    lsbuNote: "Merge ke Jumlah Kartu ATM & ATM+Debet (JENIS_DATA 001, KOTA -)",
+    lsbuNote:
+      "JENIS_DATA 001-Jumlah Kartu → KARTU_ATM / KARTU_ATM_DEBIT; 121-Jumlah Mesin ATM; transaksi tarik/belanja/transfer (KOTA = -)",
   },
   {
     id: "ue",
     title: "Uang Elektronik",
-    lsbu: null,
-    lsbuNote: "Tidak memakai file LSBU (hanya CSV folder UE)",
+    lsbu: "LSBU_VW_FORMA0302.xlsx",
+    lsbuNote:
+      "Kolom KARTU_ELEKTRONIK. Filter JENIS_DATA: 001-Jumlah Kartu, 051-Chip based, 052-Server based, 056-Registered, 057-Unregistered, plus kode transaksi UE (initial/topup/belanja/…)",
   },
   {
     id: "kk",
     title: "Kartu Kredit",
-    lsbu: null,
-    lsbuNote: "Tidak memakai file LSBU (hanya CSV folder KK)",
+    lsbu: "LSBU_VW_FORMA0301.xlsx",
+    lsbuNote: "Kolom SANDI_PELAPOR + JUMLAH_KARTU → Jumlah Kartu Kredit",
   },
   {
     id: "acquirer",
     title: "Acquirer",
     lsbu: "LSBU_VW_FORMA0304.xlsx",
-    lsbuNote: "Merge ke data EDC/Merchant (JENIS_MESIN POS Debit/Kredit/UE/Gabungan)",
+    lsbuNote:
+      "FORMA0304: JENIS_MESIN POS Debit/Kredit/UE/Gabungan (KOTA=-). Opsional FORMA0303 untuk transaksi interchange on-us/off-us",
   },
   {
     id: "fraud_bank",
     title: "Fraud per Bank",
-    lsbu: null,
-    lsbuNote: "Tidak memakai file LSBU (hanya CSV fraud per bank)",
+    lsbu: "LSBU_VW_FORMA0306.xlsx",
+    lsbuNote:
+      "Filter JENIS_KARTU (100-Kartu Kredit / 200-ATM Debet / 500-Uang Elektronik) → VOLUME_FRAUD_ACTUAL + NOMINAL_FRAUD_ACTUAL",
   },
   {
     id: "fraud_penyebab",
     title: "Fraud per Penyebab",
-    lsbu: null,
-    lsbuNote: "Tidak memakai file LSBU (hanya CSV fraud per penyebab)",
+    lsbu: "LSBU_VW_FORMA0306.xlsx",
+    lsbuNote:
+      "Sama FORMA0306, digroup per JENIS_FRAUD lalu dipetakan ke kode CP/PL/HD/TD/FA/X",
   },
   {
     id: "prop_channel",
     title: "Prop Channel",
     lsbu: null,
-    lsbuNote: "Tidak memakai LSBU (sumber: Delivery Channel / CSV prop chanel)",
+    lsbuNote: "Tidak memakai LSBU (sumber CSV Prop Channel / Delivery Channel)",
   },
 ];
 
@@ -124,11 +136,14 @@ export default function HomePage() {
 
       <section className="panel">
         <h2>Panduan file LSBU per group</h2>
+        <p style={{ color: "var(--muted)", marginTop: 0, fontSize: 0.9 }}>
+          Sumber: notebook <code>UE_google sheet.ipynb</code>, debit, KK, Acquirer, Fraud.
+        </p>
         <table>
           <thead>
             <tr>
               <th>Group / laporan</th>
-              <th>File LSBU yang dipakai</th>
+              <th>File LSBU</th>
               <th>Keterangan</th>
             </tr>
           </thead>
@@ -166,7 +181,7 @@ export default function HomePage() {
                 {GROUPS.map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.title}
-                    {g.lsbu ? ` (LSBU: ${g.lsbu})` : ""}
+                    {g.lsbu ? ` · ${g.lsbu.replace("LSBU_VW_", "").replace(".xlsx", "")}` : ""}
                   </option>
                 ))}
               </select>
@@ -184,7 +199,7 @@ export default function HomePage() {
             </label>
 
             <label>
-              File LSBU (.xlsx) — opsional
+              File LSBU (.xlsx) — sesuai group di atas
               <input
                 type="file"
                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -283,7 +298,7 @@ export default function HomePage() {
         <h2>2. Download file Google Spreadsheet</h2>
         <p style={{ color: "var(--muted)", marginTop: 0 }}>
           Satu tombol = <strong>satu file Excel (.xlsx)</strong> berisi seluruh isi spreadsheet group
-          tersebut (bukan per tab). Contoh: Debit/ATM, UE, Fraud per Bank, …
+          tersebut (bukan per tab).
         </p>
         <table>
           <thead>
@@ -335,7 +350,7 @@ export default function HomePage() {
         </table>
       </section>
 
-      <footer className="footer">SPIP · unduh per file spreadsheet · LSBU per group jelas</footer>
+      <footer className="footer">SPIP · UE = FORMA0302 (KARTU_ELEKTRONIK) · unduh per file</footer>
     </main>
   );
 }
