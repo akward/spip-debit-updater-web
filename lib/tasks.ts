@@ -5,6 +5,10 @@ export type SheetJob = {
   valueColumn: string;
   divideBy: number;
   spreadsheetEnv: string;
+  /** multi-column writers */
+  kind?: "column" | "matrix-atm" | "matrix-edc";
+  /** fraud penyebab uses jenisfraud key */
+  keyColumn?: string;
 };
 
 const D = "SHEET_DEBIT";
@@ -18,6 +22,15 @@ const P = "SHEET_PROP_CHANNEL";
 export const DEBIT_JOBS: SheetJob[] = [
   { name: "Jumlah Kartu ATM", sheetName: "Jumlah Kartu ATM", fileHints: ["kartu_atm", "jumlah_kartu_atm"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: D },
   { name: "Jumlah Kartu ATM+Debet", sheetName: "Jumlah Kartu ATM+Debet", fileHints: ["kartu_debit", "jumlah_kartu_debet", "kartu_debet"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: D },
+  {
+    name: "Jumlah Mesin ATM",
+    sheetName: "Jumlah Mesin ATM",
+    fileHints: ["mesin_atm", "jumlah_mesin_atm", "mesin"],
+    valueColumn: "expr_1",
+    divideBy: 1,
+    spreadsheetEnv: D,
+    kind: "matrix-atm",
+  },
   { name: "Volume Transaksi Tunai", sheetName: "Volume Transaksi Tunai", fileHints: ["tarik_tunai", "tarik"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: D },
   { name: "Nominal Transaksi Tunai", sheetName: "Nominal Transaksi Tunai", fileHints: ["tarik_tunai", "tarik"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: D },
   { name: "Volume Transaksi Setor Tunai", sheetName: "Volume Transaksi Setor Tunai", fileHints: ["setor", "stor_tunai"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: D },
@@ -78,6 +91,42 @@ export const KK_JOBS: SheetJob[] = [
 ];
 
 export const ACQUIRER_JOBS: SheetJob[] = [
+  {
+    name: "EDC Debet",
+    sheetName: "EDC Debet",
+    fileHints: ["debet", "debit"],
+    valueColumn: "expr_1",
+    divideBy: 1,
+    spreadsheetEnv: AT,
+    kind: "matrix-edc",
+  },
+  {
+    name: "EDC Kredit",
+    sheetName: "EDC Kredit",
+    fileHints: ["kredit", "kredit.xlsx"],
+    valueColumn: "expr_1",
+    divideBy: 1,
+    spreadsheetEnv: AT,
+    kind: "matrix-edc",
+  },
+  {
+    name: "EDC UE",
+    sheetName: "EDC UE",
+    fileHints: ["ue.xlsx", "uang_elektronik", "_ue"],
+    valueColumn: "expr_1",
+    divideBy: 1,
+    spreadsheetEnv: AT,
+    kind: "matrix-edc",
+  },
+  {
+    name: "EDC Gabungan",
+    sheetName: "EDC Gabungan",
+    fileHints: ["gabungan"],
+    valueColumn: "expr_1",
+    divideBy: 1,
+    spreadsheetEnv: AT,
+    kind: "matrix-edc",
+  },
   { name: "Vol Internasional", sheetName: "Vol Internasional", fileHints: ["internasional"], valueColumn: "vol_inter", divideBy: 1, spreadsheetEnv: AT },
   { name: "Nom Internasional", sheetName: "Nom Internasional", fileHints: ["internasional"], valueColumn: "nom_inter", divideBy: 1_000_000, spreadsheetEnv: AT },
   { name: "Vol On Us", sheetName: "Vol On Us", fileHints: ["onus", "on_us"], valueColumn: "vol_onus", divideBy: 1, spreadsheetEnv: AT },
@@ -96,12 +145,12 @@ export const FRAUD_BANK_JOBS: SheetJob[] = [
 ];
 
 export const FRAUD_PENYEBAB_JOBS: SheetJob[] = [
-  { name: "Vol Act Kartu Kredit", sheetName: "Vol Act Kartu Kredit", fileHints: ["fraud_kk", "kk"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: FP },
-  { name: "Nom Act Kartu Kredit", sheetName: "Nom Act Kartu Kredit", fileHints: ["fraud_kk", "kk"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: FP },
-  { name: "Vol Act Kartu Debet", sheetName: "Vol Act Kartu Debet", fileHints: ["fraud_atm", "atm"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: FP },
-  { name: "Nom Act Kartu Debet", sheetName: "Nom Act Kartu Debet", fileHints: ["fraud_atm", "atm"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: FP },
-  { name: "Vol Act UE", sheetName: "Vol Act UE", fileHints: ["fraud_ue", "ue"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: FP },
-  { name: "Nom Act UE", sheetName: "Nom Act UE", fileHints: ["fraud_ue", "ue"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: FP },
+  { name: "Vol Act Kartu Kredit", sheetName: "Vol Act Kartu Kredit", fileHints: ["fraud_kk", "kk"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: FP, keyColumn: "jenisfraud" },
+  { name: "Nom Act Kartu Kredit", sheetName: "Nom Act Kartu Kredit", fileHints: ["fraud_kk", "kk"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: FP, keyColumn: "jenisfraud" },
+  { name: "Vol Act Kartu Debet", sheetName: "Vol Act Kartu Debet", fileHints: ["fraud_atm", "atm"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: FP, keyColumn: "jenisfraud" },
+  { name: "Nom Act Kartu Debet", sheetName: "Nom Act Kartu Debet", fileHints: ["fraud_atm", "atm"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: FP, keyColumn: "jenisfraud" },
+  { name: "Vol Act UE", sheetName: "Vol Act UE", fileHints: ["fraud_ue", "ue"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: FP, keyColumn: "jenisfraud" },
+  { name: "Nom Act UE", sheetName: "Nom Act UE", fileHints: ["fraud_ue", "ue"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: FP, keyColumn: "jenisfraud" },
 ];
 
 function propJobs(prefix: string, sheetPrefix: string, filePrefix: string): SheetJob[] {
@@ -109,13 +158,18 @@ function propJobs(prefix: string, sheetPrefix: string, filePrefix: string): Shee
     ["Interbank", "Interbank", "interbank"],
     ["Antarbank", "Antarbank", "intrabank"],
     ["Pembayaran", "Pembayaran", "pembayaran"],
+    ["Belanja", "Belanja", "belanja"],
+    ["VA", "VA", "va"],
+    ["Reversal", "Reversal", "reversal"],
+    ["Tarik Tunai", "Tarik Tunai", "tarik"],
+    ["Setor Tunai", "Setor Tunai", "setor"],
   ];
   const out: SheetJob[] = [];
   for (const [label, sheetPart, filePart] of kinds) {
     out.push({
       name: `${prefix} Vol ${label}`,
       sheetName: `${sheetPrefix} Vol ${label}`,
-      fileHints: [`${filePrefix}_${filePart}`, filePart],
+      fileHints: [`${filePrefix}_${filePart}`, `${filePrefix}${filePart}`, filePart],
       valueColumn: "expr_1",
       divideBy: 1,
       spreadsheetEnv: P,
@@ -123,7 +177,7 @@ function propJobs(prefix: string, sheetPrefix: string, filePrefix: string): Shee
     out.push({
       name: `${prefix} Nom ${label}`,
       sheetName: `${sheetPrefix} Nom ${label}`,
-      fileHints: [`${filePrefix}_${filePart}`, filePart],
+      fileHints: [`${filePrefix}_${filePart}`, `${filePrefix}${filePart}`, filePart],
       valueColumn: "expr_2",
       divideBy: 1_000_000,
       spreadsheetEnv: P,
