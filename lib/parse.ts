@@ -36,13 +36,20 @@ function pick(row: Row, names: string[]): string | undefined {
 export function buildValueMap(
   rows: Row[],
   valueColumn: string,
-  divideBy: number
+  divideBy: number,
+  keyColumn?: string
 ): Map<string, number> {
   const map = new Map<string, number>();
+  const keyNames = keyColumn
+    ? [keyColumn, "jenisfraud", "JENIS_FRAUD", "No"]
+    : ["idpelapor", "SANDI_PELAPOR", "No", "id"];
+
   for (const row of rows) {
-    const idRaw = pick(row, ["idpelapor", "SANDI_PELAPOR", "No", "id"]);
+    const idRaw = pick(row, keyNames);
     if (!idRaw) continue;
     const id = String(idRaw).replace(/\.0$/, "").trim();
+    if (!id || id === "Total") continue;
+
     let valRaw: string | undefined;
     if (valueColumn === "jumlah") {
       valRaw = pick(row, ["jumlah"]) || pick(row, ["expr_1"]) || undefined;
@@ -52,7 +59,12 @@ export function buildValueMap(
         valRaw = String(a - b);
       }
     } else {
-      valRaw = pick(row, [valueColumn, valueColumn.toUpperCase()]);
+      valRaw = pick(row, [
+        valueColumn,
+        valueColumn.toUpperCase(),
+        "sum(frekuensitransaksi)",
+        "sum(nominaltransaksi)",
+      ]);
     }
     const num = Number(String(valRaw ?? "0").replace(/,/g, ""));
     if (!Number.isFinite(num)) continue;
