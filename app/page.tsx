@@ -2,25 +2,61 @@
 
 import { useState } from "react";
 
+/** Group + file LSBU yang dipakai (sesuai prepare CLI) */
 const GROUPS = [
-  { id: "debit", title: "Debit / ATM", lsbu: "LSBU_VW_FORMA0302.xlsx" },
-  { id: "ue", title: "Uang Elektronik", lsbu: null },
-  { id: "kk", title: "Kartu Kredit", lsbu: null },
-  { id: "acquirer", title: "Acquirer (trx)", lsbu: "LSBU_VW_FORMA0304.xlsx" },
-  { id: "fraud_bank", title: "Fraud per Bank", lsbu: null },
-  { id: "fraud_penyebab", title: "Fraud per Penyebab", lsbu: null },
-  { id: "prop_channel", title: "Prop Channel", lsbu: null },
+  {
+    id: "debit",
+    title: "Debit / ATM",
+    lsbu: "LSBU_VW_FORMA0302.xlsx",
+    lsbuNote: "Merge ke Jumlah Kartu ATM & ATM+Debet (JENIS_DATA 001, KOTA -)",
+  },
+  {
+    id: "ue",
+    title: "Uang Elektronik",
+    lsbu: null,
+    lsbuNote: "Tidak memakai file LSBU (hanya CSV folder UE)",
+  },
+  {
+    id: "kk",
+    title: "Kartu Kredit",
+    lsbu: null,
+    lsbuNote: "Tidak memakai file LSBU (hanya CSV folder KK)",
+  },
+  {
+    id: "acquirer",
+    title: "Acquirer",
+    lsbu: "LSBU_VW_FORMA0304.xlsx",
+    lsbuNote: "Merge ke data EDC/Merchant (JENIS_MESIN POS Debit/Kredit/UE/Gabungan)",
+  },
+  {
+    id: "fraud_bank",
+    title: "Fraud per Bank",
+    lsbu: null,
+    lsbuNote: "Tidak memakai file LSBU (hanya CSV fraud per bank)",
+  },
+  {
+    id: "fraud_penyebab",
+    title: "Fraud per Penyebab",
+    lsbu: null,
+    lsbuNote: "Tidak memakai file LSBU (hanya CSV fraud per penyebab)",
+  },
+  {
+    id: "prop_channel",
+    title: "Prop Channel",
+    lsbu: null,
+    lsbuNote: "Tidak memakai LSBU (sumber: Delivery Channel / CSV prop chanel)",
+  },
 ];
 
 const ENV_ROWS = [
   ["GOOGLE_CREDENTIALS_JSON", "JSON service account (wajib)"],
-  ["SHEET_DEBIT", "Spreadsheet Debit"],
-  ["SHEET_UE", "Spreadsheet UE"],
-  ["SHEET_KK", "Spreadsheet KK"],
-  ["SHEET_ACQUIRER_TRX", "Acquirer transaksi"],
-  ["SHEET_FRAUD_BANK", "Fraud per bank"],
-  ["SHEET_FRAUD_PENYEBAB", "Fraud per penyebab"],
-  ["SHEET_PROP_CHANNEL", "Prop Channel"],
+  ["SHEET_DEBIT", "File Google: Debit / ATM"],
+  ["SHEET_UE", "File Google: Uang Elektronik"],
+  ["SHEET_KK", "File Google: Kartu Kredit"],
+  ["SHEET_ACQUIRER_TRX", "File Google: Acquirer"],
+  ["SHEET_FRAUD_BANK", "File Google: Fraud per Bank"],
+  ["SHEET_FRAUD_PENYEBAB", "File Google: Fraud per Penyebab"],
+  ["SHEET_PROP_CHANNEL", "File Google: Prop Channel"],
 ];
 
 type ProcessResponse = {
@@ -29,17 +65,9 @@ type ProcessResponse = {
   monthLabel?: string;
   dryRun?: boolean;
   storage?: string;
-  lsbu?: { name: string; rows: number; note?: string } | null;
+  lsbu?: { name: string; rows: number; kind?: string } | null;
   files?: { name: string; rows: number }[];
   results?: Array<Record<string, unknown>>;
-};
-
-type ListResponse = {
-  ok: boolean;
-  error?: string;
-  title?: string;
-  worksheets?: string[];
-  source?: string;
 };
 
 export default function HomePage() {
@@ -51,9 +79,6 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [log, setLog] = useState<ProcessResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [dlGroup, setDlGroup] = useState("debit");
-  const [sheetList, setSheetList] = useState<ListResponse | null>(null);
-  const [dlLoading, setDlLoading] = useState(false);
 
   const groupMeta = GROUPS.find((g) => g.id === group);
 
@@ -84,31 +109,48 @@ export default function HomePage() {
     }
   }
 
-  async function loadSheets() {
-    setDlLoading(true);
-    setSheetList(null);
-    setError(null);
-    try {
-      const res = await fetch(`/api/download?group=${encodeURIComponent(dlGroup)}`);
-      const data = (await res.json()) as ListResponse;
-      setSheetList(data);
-      if (!data.ok) setError(data.error || "Gagal list sheet");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setDlLoading(false);
-    }
-  }
-
   return (
     <main className="container">
       <header className="header">
         <div>
           <h1>SPIP Debit Updater</h1>
-          <p>Upload CSV + LSBU → update Google Sheets → unduh tab sheet. File tidak disimpan di server.</p>
+          <p>
+            Upload CSV + LSBU → update Google Sheets → unduh <strong>satu file per laporan</strong>{" "}
+            (ATM, UE, Fraud, …). File upload tidak disimpan di server.
+          </p>
         </div>
-        <span className="badge">CSV + LSBU · download sheet asli</span>
+        <span className="badge">1 file = 1 spreadsheet</span>
       </header>
+
+      <section className="panel">
+        <h2>Panduan file LSBU per group</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Group / laporan</th>
+              <th>File LSBU yang dipakai</th>
+              <th>Keterangan</th>
+            </tr>
+          </thead>
+          <tbody>
+            {GROUPS.map((g) => (
+              <tr key={g.id}>
+                <td>
+                  <strong>{g.title}</strong>
+                </td>
+                <td>
+                  {g.lsbu ? (
+                    <code>{g.lsbu}</code>
+                  ) : (
+                    <span style={{ color: "var(--muted)" }}>Tidak ada</span>
+                  )}
+                </td>
+                <td style={{ fontSize: 0.9 }}>{g.lsbuNote}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
 
       <section className="panel">
         <h2>1. Upload & proses</h2>
@@ -124,6 +166,7 @@ export default function HomePage() {
                 {GROUPS.map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.title}
+                    {g.lsbu ? ` (LSBU: ${g.lsbu})` : ""}
                   </option>
                 ))}
               </select>
@@ -141,7 +184,7 @@ export default function HomePage() {
             </label>
 
             <label>
-              File LSBU (opsional, .xlsx) — semua group boleh upload
+              File LSBU (.xlsx) — opsional
               <input
                 type="file"
                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -149,17 +192,21 @@ export default function HomePage() {
                 style={{ display: "block", marginTop: 6 }}
               />
             </label>
-            <p style={{ margin: 0, color: "var(--muted)", fontSize: 0.85 }}>
+            <div className={groupMeta?.lsbu ? "ok" : "warn"} style={{ fontSize: 0.9 }}>
               {groupMeta?.lsbu ? (
                 <>
-                  Untuk <strong>{groupMeta.title}</strong> gunakan: <code>{groupMeta.lsbu}</code>
+                  Group <strong>{groupMeta.title}</strong> → unggah{" "}
+                  <code>{groupMeta.lsbu}</code>
+                  <br />
+                  {groupMeta.lsbuNote}
                 </>
               ) : (
-                <>Group ini biasanya tanpa merge LSBU; file tetap boleh di-upload (diabaikan jika tidak cocok).</>
+                <>
+                  Group <strong>{groupMeta?.title}</strong> tidak memakai LSBU. Kolom upload LSBU boleh
+                  dikosongkan.
+                </>
               )}
-              <br />
-              Debit → FORMA0302 · Acquirer → FORMA0304. Tidak disimpan di server.
-            </p>
+            </div>
 
             <label>
               Label bulan (opsional)
@@ -198,7 +245,8 @@ export default function HomePage() {
             {log.lsbu ? (
               <>
                 <br />
-                LSBU: <code>{log.lsbu.name}</code> ({log.lsbu.rows} rows)
+                LSBU: <code>{log.lsbu.name}</code> ({log.lsbu.rows} rows
+                {log.lsbu.kind ? `, ${log.lsbu.kind}` : ""})
               </>
             ) : null}
           </p>
@@ -232,70 +280,37 @@ export default function HomePage() {
       )}
 
       <section className="panel">
-        <h2>2. Download dari Google Spreadsheet</h2>
+        <h2>2. Download file Google Spreadsheet</h2>
         <p style={{ color: "var(--muted)", marginTop: 0 }}>
-          Daftar <strong>nama tab</strong> dari Google Sheet. Klik Download CSV untuk mengunduh isi tab
-          tersebut (data yang ada di spreadsheet).
+          Satu tombol = <strong>satu file Excel (.xlsx)</strong> berisi seluruh isi spreadsheet group
+          tersebut (bukan per tab). Contoh: Debit/ATM, UE, Fraud per Bank, …
         </p>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-          <select
-            value={dlGroup}
-            onChange={(e) => setDlGroup(e.target.value)}
-            style={{ padding: 10, borderRadius: 8 }}
-          >
+        <table>
+          <thead>
+            <tr>
+              <th>Laporan</th>
+              <th>Unduh file</th>
+            </tr>
+          </thead>
+          <tbody>
             {GROUPS.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.title}
-              </option>
+              <tr key={g.id}>
+                <td>
+                  <strong>{g.title}</strong>
+                </td>
+                <td>
+                  <a
+                    className="btn primary"
+                    href={`/api/download?group=${encodeURIComponent(g.id)}&format=xlsx`}
+                    style={{ display: "inline-block", textDecoration: "none" }}
+                  >
+                    Download {g.title}.xlsx
+                  </a>
+                </td>
+              </tr>
             ))}
-          </select>
-          <button className="btn" type="button" onClick={loadSheets} disabled={dlLoading}>
-            {dlLoading ? "Memuat…" : "Tampilkan worksheet"}
-          </button>
-        </div>
-
-        {sheetList?.ok && (
-          <div style={{ marginTop: 14 }}>
-            <p style={{ color: "var(--muted)" }}>
-              Spreadsheet: <strong>{sheetList.title || "—"}</strong>
-              {sheetList.source ? ` · sumber: ${sheetList.source}` : ""}
-              {" · "}
-              {(sheetList.worksheets || []).length} tab
-            </p>
-            <table>
-              <thead>
-                <tr>
-                  <th>Nama sheet (tab Google)</th>
-                  <th>Unduh</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(sheetList.worksheets || []).map((name) => (
-                  <tr key={name}>
-                    <td>
-                      <strong>{name}</strong>
-                    </td>
-                    <td>
-                      <a
-                        href={`/api/download?group=${encodeURIComponent(dlGroup)}&sheet=${encodeURIComponent(name)}&format=csv`}
-                      >
-                        Download CSV
-                      </a>
-                      {" · "}
-                      <a
-                        href={`/api/download?group=${encodeURIComponent(dlGroup)}&sheet=${encodeURIComponent(name)}&format=json`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        JSON
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+          </tbody>
+        </table>
       </section>
 
       <section className="panel">
@@ -320,7 +335,7 @@ export default function HomePage() {
         </table>
       </section>
 
-      <footer className="footer">SPIP · download = isi tab Google Sheet</footer>
+      <footer className="footer">SPIP · unduh per file spreadsheet · LSBU per group jelas</footer>
     </main>
   );
 }
