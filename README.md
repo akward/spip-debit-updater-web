@@ -1,22 +1,18 @@
 # SPIP Debit Updater Web
 
-Web app: **upload CSV → proses → update Google Sheets**.
+Upload CSV → update Google Sheets untuk **semua group**, lalu **download** hasil dari spreadsheet.
 
-## Fitur
-- Upload banyak CSV sekaligus
-- Dry-run (cek mapping tanpa menulis)
-- Update kolom bulan di Google Sheet (group **debit**)
+## Groups
+- debit, ue, kk, acquirer, fraud_bank, fraud_penyebab, prop_channel
 
-## Setup Vercel env
-```
-GOOGLE_CREDENTIALS_JSON={"type":"service_account",...}
-SHEET_DEBIT=1P5EQlpQ-EJOuVIUq52Jow1ciH0-vQKLAHT1xuwflKQo
-```
+## Environment Variables
+Lihat `.env.example` dan tabel di halaman web.
 
-Share sheet ke `client_email` service account.
+## API
+- `POST /api/process` — multipart: group, dryRun, monthLabel, files[]
+- `GET /api/download?group=debit` — list worksheet
+- `GET /api/download?group=debit&sheet=Jumlah%20Kartu%20ATM&format=csv` — unduh CSV
 
-## Local
-```bash
-npm install
-npm run dev
-```
+## Catatan
+- Matrix mesin ATM / EDC multi-kolom & LSBU merge: tetap CLI Python lokal
+- Timeout Vercel ~60s: proses per group
