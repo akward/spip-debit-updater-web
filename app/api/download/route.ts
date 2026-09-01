@@ -20,41 +20,45 @@ export async function GET(req: NextRequest) {
     const spreadsheetId = spreadsheetIdForGroup(group);
     if (!spreadsheetId) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: `Spreadsheet ID tidak ditemukan untuk group '${group}'. Set env sesuai group.`,
-        },
+        { ok: false, error: `Env spreadsheet untuk group '${group}' belum di-set.` },
         { status: 400 }
       );
     }
 
-    const sheets = await getSheetsClient();
+    const sheetsApi = await getSheetsClient();
 
     if (!sheet) {
-      const meta = await sheets.spreadsheets.get({
+      const meta = await sheetsApi.spreadsheets.get({
         spreadsheetId,
-        fields: "properties.title,sheets.properties.title",
+        includeGridData: false,
       });
-      const titles =
-        meta.data.sheets?.map((s) => s.properties?.title || "").filter(Boolean) ||
-        [];
-      const jobs = GROUPS[group] || [];
-      const jobSheets = [...new Set(jobs.map((j) => j.sheetName))];
+
+      const titles: string[] = [];
+      for (const s of meta.data.sheets || []) {
+        const t = (s.properties?.title || "").trim();
+        if (t) titles.push(t);
+      }
+
+      const knownJobs = [...new Set((GROUPS[group] || []).map((j) => j.sheetName))];
+
+      // Prefer real tabs from Google; if empty, fall back to known job names
+      const worksheets = titles.length > 0 ? titles : knownJobs;
+
       return NextResponse.json({
         ok: true,
         group,
         spreadsheetId,
-        title: meta.data.properties?.title,
-        worksheets: titles,
-        knownJobs: jobSheets,
-        downloadHint:
-          "Gunakan ?group=debit&sheet=Jumlah%20Kartu%20ATM&format=csv",
+        title: meta.data.properties?.title || group,
+        worksheets,
+        knownJobs,
+        source: titles.length > 0 ? "google" : "fallback-jobs",
       });
     }
 
-    const res = await sheets.spreadsheets.values.get({
+    const safeSheet = sheet.replace(/'/g, "''");
+    const res = await sheetsApi.spreadsheets.values.get({
       spreadsheetId,
-      range: `'${sheet}'`,
+      range: `'${safeSheet}'`,
       majorDimension: "ROWS",
     });
     const rows = res.data.values || [];
@@ -70,8 +74,8 @@ export async function GET(req: NextRequest) {
     const csv = rows
       .map((r) => r.map((c) => escape(String(c ?? ""))).join(","))
       .join("\n");
-    const safeName = sheet.replace(/[^\w\-]+/g, "_");
-    return new NextResponse(csv, {
+    const safeName = sheet.replace(/[^\w\-]+/g, "_") || "sheet";
+    return new NextResponse("\uFEFF" + csv, {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
