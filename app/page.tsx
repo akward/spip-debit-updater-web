@@ -3,7 +3,24 @@
 import { useState } from "react";
 
 const GROUPS = [
-  { id: "debit", title: "Debit / ATM", note: "Upload CSV dari folder ATM" },
+  { id: "debit", title: "Debit / ATM" },
+  { id: "ue", title: "Uang Elektronik" },
+  { id: "kk", title: "Kartu Kredit" },
+  { id: "acquirer", title: "Acquirer (trx)" },
+  { id: "fraud_bank", title: "Fraud per Bank" },
+  { id: "fraud_penyebab", title: "Fraud per Penyebab" },
+  { id: "prop_channel", title: "Prop Channel" },
+];
+
+const ENV_ROWS = [
+  ["GOOGLE_CREDENTIALS_JSON", "JSON service account (wajib)", "{\"type\":\"service_account\",...}"],
+  ["SHEET_DEBIT", "Spreadsheet Debit", "1P5EQlpQ-EJOuVIUq52Jow1ciH0-vQKLAHT1xuwflKQo"],
+  ["SHEET_UE", "Spreadsheet UE", "1fN29bqYn-50zJRLp7pUGbU3p-SOh2aW6UKQgKOYfH_Q"],
+  ["SHEET_KK", "Spreadsheet KK", "17Bgbn5ksCbYYDnMpbR8YmvewktN5bb7LxcygbI863Uc"],
+  ["SHEET_ACQUIRER_TRX", "Acquirer transaksi", "1dyII_IIERsu6hol9A_H_PxObR-IxWMJ5SslCCL3i4YM"],
+  ["SHEET_FRAUD_BANK", "Fraud per bank", "1HhG0BaKGhXVRYWZOEAC7xpu_yZQzYs6QpprS5PgQAos"],
+  ["SHEET_FRAUD_PENYEBAB", "Fraud per penyebab", "1-W66gED-CtO2ajbTtFrjXrZsfAP6bMe0-hkOrkxrpAw"],
+  ["SHEET_PROP_CHANNEL", "Prop Channel", "1l4byNkuyyTtMmdT7VSMDFB326GX0bqN02mbc3YMWgRE"],
 ];
 
 type ProcessResponse = {
@@ -15,6 +32,13 @@ type ProcessResponse = {
   results?: Array<Record<string, unknown>>;
 };
 
+type ListResponse = {
+  ok: boolean;
+  error?: string;
+  title?: string;
+  worksheets?: string[];
+};
+
 export default function HomePage() {
   const [group, setGroup] = useState("debit");
   const [files, setFiles] = useState<FileList | null>(null);
@@ -23,6 +47,9 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [log, setLog] = useState<ProcessResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dlGroup, setDlGroup] = useState("debit");
+  const [sheetList, setSheetList] = useState<ListResponse | null>(null);
+  const [dlLoading, setDlLoading] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -41,14 +68,28 @@ export default function HomePage() {
       Array.from(files).forEach((f) => fd.append("files", f));
       const res = await fetch("/api/process", { method: "POST", body: fd });
       const data = (await res.json()) as ProcessResponse;
-      if (!res.ok || !data.ok) {
-        setError(data.error || "Gagal memproses");
-      }
+      if (!res.ok || !data.ok) setError(data.error || "Gagal memproses");
       setLog(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadSheets() {
+    setDlLoading(true);
+    setSheetList(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/download?group=${encodeURIComponent(dlGroup)}`);
+      const data = (await res.json()) as ListResponse;
+      setSheetList(data);
+      if (!data.ok) setError(data.error || "Gagal list sheet");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDlLoading(false);
     }
   }
 
@@ -58,17 +99,17 @@ export default function HomePage() {
         <div>
           <h1>SPIP Debit Updater</h1>
           <p>
-            Upload CSV → proses otomatis → update Google Sheets.
-            Mode dry-run disarankan dulu sebelum menulis ke sheet.
+            Upload CSV → update Google Sheets (semua group). Unduh hasil dari spreadsheet
+            lewat bagian Download.
           </p>
         </div>
-        <span className="badge">Web + upload CSV</span>
+        <span className="badge">Semua group · upload · download</span>
       </header>
 
       <section className="panel">
-        <h2>1. Upload & proses</h2>
+        <h2>1. Upload CSV & proses</h2>
         <form onSubmit={onSubmit}>
-          <div style={{ display: "grid", gap: 12, maxWidth: 560 }}>
+          <div style={{ display: "grid", gap: 12, maxWidth: 640 }}>
             <label>
               Group
               <select
@@ -83,9 +124,8 @@ export default function HomePage() {
                 ))}
               </select>
             </label>
-
             <label>
-              File CSV (bisa banyak)
+              File CSV (banyak file)
               <input
                 type="file"
                 accept=".csv,text/csv"
@@ -94,29 +134,22 @@ export default function HomePage() {
                 style={{ display: "block", marginTop: 6 }}
               />
             </label>
-
             <label>
-              Label bulan (opsional, default = bulan sistem − 1)
+              Label bulan (opsional)
               <input
                 type="text"
-                placeholder="contoh: Juli 2026"
+                placeholder="Juli 2026"
                 value={monthLabel}
                 onChange={(e) => setMonthLabel(e.target.value)}
                 style={{ display: "block", width: "100%", marginTop: 6, padding: 10, borderRadius: 8 }}
               />
             </label>
-
             <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={dryRun}
-                onChange={(e) => setDryRun(e.target.checked)}
-              />
-              Dry-run (jangan tulis ke Google Sheet, hanya cek mapping)
+              <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
+              Dry-run (cek mapping, jangan tulis sheet)
             </label>
-
             <button className="btn primary" type="submit" disabled={loading}>
-              {loading ? "Memproses…" : dryRun ? "Cek mapping (dry-run)" : "Proses & update Sheet"}
+              {loading ? "Memproses…" : dryRun ? "Cek mapping" : "Update Google Sheet"}
             </button>
           </div>
         </form>
@@ -130,15 +163,12 @@ export default function HomePage() {
 
       {log && (
         <section className="panel">
-          <h2>Hasil</h2>
+          <h2>Hasil proses</h2>
           <p style={{ color: "var(--muted)" }}>
-            Bulan: <code>{log.monthLabel}</code>
-            {log.dryRun ? " · dry-run" : " · write"}
+            Bulan: <code>{log.monthLabel}</code> {log.dryRun ? "· dry-run" : "· write"}
           </p>
           {log.files && (
-            <div className="cmd">
-              {log.files.map((f) => `${f.name} (${f.rows} rows)`).join("\n")}
-            </div>
+            <div className="cmd">{log.files.map((f) => `${f.name} (${f.rows} rows)`).join("\n")}</div>
           )}
           <table>
             <thead>
@@ -170,30 +200,88 @@ export default function HomePage() {
       )}
 
       <section className="panel">
-        <h2>2. Environment Vercel (wajib untuk write)</h2>
-        <div className="warn">
-          Di Vercel Project → Settings → Environment Variables, set:
-          <div className="cmd">GOOGLE_CREDENTIALS_JSON={"{"} ... JSON service account ... {"}"}
-SHEET_DEBIT=1P5EQlpQ-EJOuVIUq52Jow1ciH0-vQKLAHT1xuwflKQo</div>
-          Share spreadsheet Google ke email <code>client_email</code> service account (Editor).
+        <h2>2. Download data dari Google Spreadsheet</h2>
+        <p style={{ color: "var(--muted)", marginTop: 0 }}>
+          Ambil data terbaru dari sheet yang sudah di-update (export CSV).
+        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+          <select
+            value={dlGroup}
+            onChange={(e) => setDlGroup(e.target.value)}
+            style={{ padding: 10, borderRadius: 8 }}
+          >
+            {GROUPS.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.title}
+              </option>
+            ))}
+          </select>
+          <button className="btn" type="button" onClick={loadSheets} disabled={dlLoading}>
+            {dlLoading ? "Memuat…" : "Tampilkan worksheet"}
+          </button>
         </div>
-        <div className="ok" style={{ marginTop: 12 }}>
-          Tanpa env di atas, dry-run tetap bisa dipakai untuk cek apakah CSV ter-mapping.
-        </div>
+        {sheetList?.ok && (
+          <div style={{ marginTop: 14 }}>
+            <p style={{ color: "var(--muted)" }}>
+              Spreadsheet: <strong>{sheetList.title}</strong>
+            </p>
+            <div className="grid">
+              {(sheetList.worksheets || []).map((name) => (
+                <article key={name} className="card">
+                  <h3 style={{ fontSize: 0.95 }}>{name}</h3>
+                  <p>
+                    <a
+                      href={`/api/download?group=${encodeURIComponent(dlGroup)}&sheet=${encodeURIComponent(name)}&format=csv`}
+                    >
+                      Download CSV
+                    </a>
+                    {" · "}
+                    <a
+                      href={`/api/download?group=${encodeURIComponent(dlGroup)}&sheet=${encodeURIComponent(name)}&format=json`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      JSON
+                    </a>
+                  </p>
+                </article>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="panel">
-        <h2>Batasan</h2>
-        <ul className="steps">
-          <li>Group web saat ini: <strong>debit</strong> (UE/KK bisa ditambah pola sama).</li>
-          <li>Timeout Vercel Hobby ~60 detik — proses per group.</li>
-          <li>Mesin ATM matrix & LSBU merge belum di web (tetap CLI lokal).</li>
-        </ul>
+        <h2>3. Environment Variables (Vercel)</h2>
+        <div className="warn">
+          Vercel → Project → Settings → Environment Variables. Apply ke Production + Preview.
+          Share setiap spreadsheet ke <code>client_email</code> service account (Editor).
+        </div>
+        <table style={{ marginTop: 12 }}>
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>Keterangan</th>
+              <th>Contoh nilai</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ENV_ROWS.map(([k, d, ex]) => (
+              <tr key={k}>
+                <td>
+                  <code>{k}</code>
+                </td>
+                <td>{d}</td>
+                <td>
+                  <code style={{ fontSize: 11 }}>{ex}</code>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </section>
 
-      <footer className="footer">
-        SPIP Debit Updater Web · upload CSV · Google Sheets API
-      </footer>
+      <footer className="footer">SPIP · semua group · upload CSV · download hasil sheet</footer>
     </main>
   );
 }
