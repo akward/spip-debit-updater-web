@@ -6,6 +6,8 @@ import { GROUPS } from "@/lib/tasks";
 import {
   parseLsbuXlsx,
   mergeLsbuDebit,
+  mergeLsbuUe,
+  mergeLsbuKk,
   mergeLsbuAcquirer,
   detectLsbuKind,
   ACQUIRER_LSBU_JENIS,
@@ -73,6 +75,7 @@ export async function POST(req: NextRequest) {
       const map = buildValueMap(file.rows, job.valueColumn, job.divideBy);
 
       if (lsbuRows) {
+        // Debit — FORMA0302
         if (group === "debit" && lsbuKind === "forma0302" && job.valueColumn === "jumlah") {
           if (matchFile(file.name, ["kartu_atm", "jumlah_kartu_atm"])) {
             const m = mergeLsbuDebit(lsbuRows, { kartuAtm: map });
@@ -91,6 +94,36 @@ export async function POST(req: NextRequest) {
             });
           }
         }
+
+        // UE — FORMA0302 KARTU_ELEKTRONIK → jumlah_ue
+        if (
+          group === "ue" &&
+          lsbuKind === "forma0302" &&
+          (job.valueColumn === "jumlah" || matchFile(file.name, ["jumlah_ue", "jumlah ue"]))
+        ) {
+          if (matchFile(file.name, ["jumlah_ue", "jumlah ue", "ue_beredar", "ue beredar"])) {
+            const n = mergeLsbuUe(lsbuRows, map);
+            results.push({
+              job: `${job.name} [LSBU 0302]`,
+              status: "info",
+              reason: `+${n} dari LSBU KARTU_ELEKTRONIK`,
+            });
+          }
+        }
+
+        // KK — FORMA0301 JUMLAH_KARTU
+        if (group === "kk" && lsbuKind === "forma0301") {
+          if (matchFile(file.name, ["jumlah_kartu_kredit", "jumlah kartu kredit", "jumlah_kartu"])) {
+            const n = mergeLsbuKk(lsbuRows, map);
+            results.push({
+              job: `${job.name} [LSBU 0301]`,
+              status: "info",
+              reason: `+${n} dari LSBU JUMLAH_KARTU`,
+            });
+          }
+        }
+
+        // Acquirer — FORMA0304
         if (group === "acquirer" && lsbuKind === "forma0304") {
           for (const rule of ACQUIRER_LSBU_JENIS) {
             if (matchFile(file.name, rule.hints)) {
