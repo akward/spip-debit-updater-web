@@ -11,10 +11,12 @@ import {
   mergeLsbuAcquirer,
   detectLsbuKind,
   ACQUIRER_LSBU_JENIS,
+  mergeLsbuUeByJenis,
+  mergeLsbuFraudBank,
 } from "@/lib/lsbu";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   try {
@@ -34,9 +36,7 @@ export async function POST(req: NextRequest) {
     }
 
     const files = form.getAll("files").filter((f) => f instanceof File) as File[];
-    if (!files.length) {
-      return NextResponse.json({ ok: false, error: "Upload minimal 1 file CSV." }, { status: 400 });
-    }
+    // Allow zero CSV: all jobs will copy previous month (CLI parity)
 
     const lsbuFile = form.get("lsbu");
     let lsbuInfo: Record<string, unknown> | null = null;
@@ -62,123 +62,161 @@ export async function POST(req: NextRequest) {
     const results: Array<Record<string, unknown>> = [];
 
     for (const job of jobs) {
-      const file = parsed.find((p) => matchFile(p.name, job.fileHints));
-      if (!file) {
-        results.push({
-          job: job.name,
-          status: "skip",
-          reason: `Tidak ada CSV: ${job.fileHints.join(", ")}`,
-        });
-        continue;
-      }
+      try {
+        const file = parsed.find((p) => matchFile(p.name, job.fileHints));
+        let map = new Map<string, number>();
+        let source: "csv" | "none" = "none";
 
-      const map = buildValueMap(file.rows, job.valueColumn, job.divideBy);
-
-      if (lsbuRows) {
-        // Debit — FORMA0302
-        if (group === "debit" && lsbuKind === "forma0302" && job.valueColumn === "jumlah") {
-          if (matchFile(file.name, ["kartu_atm", "jumlah_kartu_atm"])) {
-            const m = mergeLsbuDebit(lsbuRows, { kartuAtm: map });
-            results.push({
-              job: `${job.name} [LSBU 0302]`,
-              status: "info",
-              reason: `+${m.addedAtm} dari LSBU KARTU_ATM`,
-            });
-          }
-          if (matchFile(file.name, ["kartu_debit", "jumlah_kartu_debet", "kartu_debet"])) {
-            const m = mergeLsbuDebit(lsbuRows, { kartuDebit: map });
-            results.push({
-              job: `${job.name} [LSBU 0302]`,
-              status: "info",
-              reason: `+${m.addedDebit} dari LSBU KARTU_ATM_DEBIT`,
-            });
-          }
+        if (file) {
+          source = "csv";
+          map = buildValueMap(file.rows, job.valueColumn, job.divideBy);
         }
 
-        // UE — FORMA0302 KARTU_ELEKTRONIK → jumlah_ue
-        if (
-          group === "ue" &&
-          lsbuKind === "forma0302" &&
-          (job.valueColumn === "jumlah" || matchFile(file.name, ["jumlah_ue", "jumlah ue"]))
-        ) {
-          if (matchFile(file.name, ["jumlah_ue", "jumlah ue", "ue_beredar", "ue beredar"])) {
-            const n = mergeLsbuUe(lsbuRows, map);
-            results.push({
-              job: `${job.name} [LSBU 0302]`,
-              status: "info",
-              reason: `+${n} dari LSBU KARTU_ELEKTRONIK`,
-            });
-          }
-        }
-
-        // KK — FORMA0301 JUMLAH_KARTU
-        if (group === "kk" && lsbuKind === "forma0301") {
-          if (matchFile(file.name, ["jumlah_kartu_kredit", "jumlah kartu kredit", "jumlah_kartu"])) {
-            const n = mergeLsbuKk(lsbuRows, map);
-            results.push({
-              job: `${job.name} [LSBU 0301]`,
-              status: "info",
-              reason: `+${n} dari LSBU JUMLAH_KARTU`,
-            });
-          }
-        }
-
-        // Acquirer — FORMA0304
-        if (group === "acquirer" && lsbuKind === "forma0304") {
-          for (const rule of ACQUIRER_LSBU_JENIS) {
-            if (matchFile(file.name, rule.hints)) {
-              const n = mergeLsbuAcquirer(lsbuRows, rule.jenis, map, "JUMLAH_MESIN");
+        // ---- LSBU merges (in-memory) ----
+        if (lsbuRows) {
+          if (group === "debit" && lsbuKind === "forma0302" && job.valueColumn === "jumlah") {
+            if (file && matchFile(file.name, ["kartu_atm", "jumlah_kartu_atm"])) {
+              const m = mergeLsbuDebit(lsbuRows, { kartuAtm: map });
               results.push({
-                job: `${job.name} [LSBU 0304]`,
+                job: `${job.name} [LSBU]`,
                 status: "info",
-                reason: `+${n} dari ${rule.jenis}`,
+                reason: `+${m.addedAtm} KARTU_ATM`,
+              });
+            }
+            if (
+              file &&
+              matchFile(file.name, ["kartu_debit", "jumlah_kartu_debet", "kartu_debet"])
+            ) {
+              const m = mergeLsbuDebit(lsbuRows, { kartuDebit: map });
+              results.push({
+                job: `${job.name} [LSBU]`,
+                status: "info",
+                reason: `+${m.addedDebit} KARTU_ATM_DEBIT`,
               });
             }
           }
+
+          if (group === "ue" && lsbuKind === "forma0302") {
+            // Jumlah Kartu / jenis UE
+            if (matchFile(job.name, ["Jumlah Kartu"]) || matchFile(job.sheetName, ["Jumlah Kartu"])) {
+              const n = mergeLsbuUe(lsbuRows, map);
+              if (n) results.push({ job: `${job.name} [LSBU]`, status: "info", reason: `+${n} KARTU_ELEKTRONIK` });
+            }
+            const jenisMap: Record<string, string> = {
+              "Chip Based": "051-Chip based",
+              "Server Based": "052-Server based",
+              Registered: "056-Registered",
+              Unregistered: "057-Unregistered",
+            };
+            for (const [namePart, jenis] of Object.entries(jenisMap)) {
+              if (job.name.includes(namePart) || job.sheetName.includes(namePart)) {
+                const n = mergeLsbuUeByJenis(lsbuRows, map, jenis);
+                if (n)
+                  results.push({
+                    job: `${job.name} [LSBU]`,
+                    status: "info",
+                    reason: `+${n} ${jenis}`,
+                  });
+              }
+            }
+          }
+
+          if (group === "kk" && lsbuKind === "forma0301") {
+            if (
+              matchFile(job.name, ["Jumlah Kartu"]) ||
+              (file && matchFile(file.name, ["jumlah_kartu"]))
+            ) {
+              const n = mergeLsbuKk(lsbuRows, map);
+              if (n)
+                results.push({
+                  job: `${job.name} [LSBU]`,
+                  status: "info",
+                  reason: `+${n} JUMLAH_KARTU`,
+                });
+            }
+          }
+
+          if (group === "acquirer" && lsbuKind === "forma0304" && file) {
+            for (const rule of ACQUIRER_LSBU_JENIS) {
+              if (matchFile(file.name, rule.hints)) {
+                const n = mergeLsbuAcquirer(lsbuRows, rule.jenis, map, "JUMLAH_MESIN");
+                if (n)
+                  results.push({
+                    job: `${job.name} [LSBU]`,
+                    status: "info",
+                    reason: `+${n} ${rule.jenis}`,
+                  });
+              }
+            }
+          }
+
+          if ((group === "fraud_bank" || group === "fraud_penyebab") && lsbuKind === "forma0306") {
+            const card =
+              job.name.includes("Kredit")
+                ? "100-Kartu Kredit"
+                : job.name.includes("Debet") || job.name.includes("ATM")
+                  ? "200-Kartu ATM dan Debet"
+                  : job.name.includes("UE")
+                    ? "500-Uang Elektronik"
+                    : "";
+            if (card) {
+              const field = job.valueColumn === "expr_2" ? "NOMINAL_FRAUD_ACTUAL" : "VOLUME_FRAUD_ACTUAL";
+              const n = mergeLsbuFraudBank(lsbuRows, map, card, field, job.divideBy);
+              if (n)
+                results.push({
+                  job: `${job.name} [LSBU 0306]`,
+                  status: "info",
+                  reason: `+${n} ${card}`,
+                });
+            }
+          }
         }
-      }
 
-      const spreadsheetId = process.env[job.spreadsheetEnv];
-      if (!spreadsheetId) {
-        results.push({
-          job: job.name,
-          status: "error",
-          reason: `Env ${job.spreadsheetEnv} belum di-set`,
-          ids: map.size,
-        });
-        continue;
-      }
+        const spreadsheetId = process.env[job.spreadsheetEnv];
+        if (!spreadsheetId) {
+          results.push({
+            job: job.name,
+            status: "error",
+            reason: `Env ${job.spreadsheetEnv} belum di-set`,
+            ids: map.size,
+            source,
+          });
+          continue;
+        }
 
-      if (dryRun) {
-        results.push({
-          job: job.name,
-          status: "dry-run",
-          sheet: job.sheetName,
-          file: file.name,
-          ids: map.size,
-          monthLabel,
-          sample: [...map.entries()].slice(0, 3),
-        });
-        continue;
-      }
+        if (dryRun) {
+          results.push({
+            job: job.name,
+            status: source === "none" ? "dry-run-copy-previous" : "dry-run",
+            sheet: job.sheetName,
+            file: file?.name || null,
+            ids: map.size,
+            monthLabel,
+            source,
+            sample: [...map.entries()].slice(0, 3),
+          });
+          continue;
+        }
 
-      try {
         const out = await updateMonthColumn({
           spreadsheetId,
           sheetName: job.sheetName,
           monthLabel,
           valuesById: map,
+          copyIfEmpty: true,
         });
         results.push({
           job: job.name,
-          status: "ok",
+          status: out.mode === "write" ? "ok" : out.mode,
           sheet: job.sheetName,
-          file: file.name,
+          file: file?.name || null,
           ids: map.size,
           monthLabel,
+          source,
           ...out,
         });
       } catch (e) {
+        // Jangan hentikan seluruh batch — lanjut job berikutnya (CLI-like)
         results.push({
           job: job.name,
           status: "error",
@@ -188,6 +226,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const errors = results.filter((r) => r.status === "error").length;
     return NextResponse.json({
       ok: true,
       group,
@@ -196,6 +235,11 @@ export async function POST(req: NextRequest) {
       storage: "none — CSV/LSBU hanya memori",
       lsbu: lsbuInfo,
       files: parsed.map((p) => ({ name: p.name, rows: p.rows.length })),
+      summary: {
+        total: results.length,
+        errors,
+        ok: results.filter((r) => r.status === "ok" || r.status === "copy-previous").length,
+      },
       results,
     });
   } catch (e) {
