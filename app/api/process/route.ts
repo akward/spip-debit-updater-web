@@ -3,11 +3,12 @@ import { previousMonthLabel } from "@/lib/months";
 import { parseCsvText, buildValueMap, matchFile } from "@/lib/parse";
 import { updateMonthColumn } from "@/lib/sheets";
 import { GROUPS } from "@/lib/tasks";
+import { parseLsbuXlsx, mergeLsbuDebit } from "@/lib/lsbu";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-/** CSV hanya di memori selama request — tidak ke disk/Blob/DB. */
+/** CSV + LSBU hanya di memori — tidak ke disk/Blob/DB. */
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
@@ -36,6 +37,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const lsbuFile = form.get("lsbu");
+    let lsbuInfo: Record<string, unknown> | null = null;
+    let lsbuRows: ReturnType<typeof parseLsbuXlsx> | null = null;
+    if (lsbuFile instanceof File && lsbuFile.size > 0) {
+      const buf = await lsbuFile.arrayBuffer();
+      lsbuRows = parseLsbuXlsx(buf);
+      lsbuInfo = {
+        name: lsbuFile.name,
+        rows: lsbuRows.length,
+        note: "diproses di memori, tidak disimpan",
+      };
+    }
+
     const parsed: { name: string; rows: ReturnType<typeof parseCsvText> }[] = [];
     for (const f of files) {
       const text = await f.text();
@@ -56,6 +70,29 @@ export async function POST(req: NextRequest) {
       }
 
       const map = buildValueMap(file.rows, job.valueColumn, job.divideBy);
+
+      // Merge LSBU into jumlah kartu jobs (debit)
+      if (group === "debit" && lsbuRows && job.valueColumn === "jumlah") {
+        if (matchFile(file.name, ["kartu_atm", "jumlah_kartu_atm"])) {
+          const m = mergeLsbuDebit(lsbuRows, { kartuAtm: map });
+          results.push({
+            job: job.name + " [LSBU]",
+            status: "info",
+            reason: `LSBU merge kartu ATM: +${m.addedAtm} baris`,
+          });
+        }
+        if (
+          matchFile(file.name, ["kartu_debit", "jumlah_kartu_debet", "kartu_debet"])
+        ) {
+          const m = mergeLsbuDebit(lsbuRows, { kartuDebit: map });
+          results.push({
+            job: job.name + " [LSBU]",
+            status: "info",
+            reason: `LSBU merge kartu Debit: +${m.addedDebit} baris`,
+          });
+        }
+      }
+
       const spreadsheetId = process.env[job.spreadsheetEnv];
       if (!spreadsheetId) {
         results.push({
@@ -113,7 +150,8 @@ export async function POST(req: NextRequest) {
       group,
       monthLabel,
       dryRun,
-      storage: "none — CSV hanya di memori selama request",
+      storage: "none — CSV/LSBU hanya di memori selama request",
+      lsbu: lsbuInfo,
       files: parsed.map((p) => ({ name: p.name, rows: p.rows.length })),
       results,
     });
