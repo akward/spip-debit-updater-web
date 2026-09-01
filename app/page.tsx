@@ -86,13 +86,13 @@ python main.py --prepare-only</div>
             <tr>
               <td>CSV sumber bulan berjalan</td>
               <td>
-                <code>D:\Pengolahan Data\2026\{""}{"{"}"bulan"}{"}"}\ATM|UE|KK|infra|Kanal|Fraud</code>
+                <code>D:\Pengolahan Data\2026\[bulan]\ATM | UE | KK | infra | Kanal | Fraud</code>
               </td>
             </tr>
             <tr>
               <td>Hasil prepare Excel</td>
               <td>
-                <code>D:\Pengolahan Data\xlsx\debit|UE|KK|Acquirer|…</code>
+                <code>D:\Pengolahan Data\xlsx\debit | UE | KK | Acquirer | …</code>
               </td>
             </tr>
             <tr>
