@@ -4,7 +4,9 @@ import type { Row } from "./parse";
 export function parseLsbuXlsx(buf: ArrayBuffer): Row[] {
   const wb = XLSX.read(buf, { type: "array" });
   const sheet = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+    defval: "",
+  });
   return rows.map((r) => {
     const out: Row = {};
     for (const [k, v] of Object.entries(r)) {
@@ -69,7 +71,9 @@ export function mergeLsbuDebit(
       }
     }
     if (maps.kartuDebit) {
-      const v = Number(String(pick(row, ["KARTU_ATM_DEBIT"]) || "0").replace(/,/g, ""));
+      const v = Number(
+        String(pick(row, ["KARTU_ATM_DEBIT"]) || "0").replace(/,/g, "")
+      );
       if (Number.isFinite(v) && v !== 0) {
         maps.kartuDebit.set(id, (maps.kartuDebit.get(id) || 0) + v);
         addedDebit++;
@@ -79,22 +83,29 @@ export function mergeLsbuDebit(
   return { addedAtm, addedDebit };
 }
 
-/**
- * UE FORMA0302 → KARTU_ELEKTRONIK (notebook UE_google sheet.ipynb)
- * filter: JENIS_DATA 001-Jumlah Kartu, KOTA -
- */
+/** UE FORMA0302 → KARTU_ELEKTRONIK, JENIS_DATA 001-Jumlah Kartu */
 export function mergeLsbuUe(lsbuRows: Row[], map: Map<string, number>): number {
+  return mergeLsbuUeByJenis(lsbuRows, map, "001-Jumlah Kartu");
+}
+
+/** UE FORMA0302 by exact/partial JENIS_DATA */
+export function mergeLsbuUeByJenis(
+  lsbuRows: Row[],
+  map: Map<string, number>,
+  jenisFilter: string,
+  valueCol: string = "KARTU_ELEKTRONIK"
+): number {
   let added = 0;
   for (const row of lsbuRows) {
     const jenis = (pick(row, ["JENIS_DATA", "jenis_data"]) || "").trim();
     const kota = (pick(row, ["KOTA", "kota"]) || "").trim();
     if (kota !== "-" && kota !== "") continue;
-    if (!jenis.includes("001-Jumlah Kartu") && !jenis.startsWith("001")) continue;
+    if (!jenis.includes(jenisFilter) && jenis !== jenisFilter) continue;
     const id = (pick(row, ["SANDI_PELAPOR", "idpelapor"]) || "")
       .replace(/\.0$/, "")
       .trim();
     if (!id) continue;
-    const v = Number(String(pick(row, ["KARTU_ELEKTRONIK"]) || "0").replace(/,/g, ""));
+    const v = Number(String(pick(row, [valueCol]) || "0").replace(/,/g, ""));
     if (Number.isFinite(v) && v !== 0) {
       map.set(id, (map.get(id) || 0) + v);
       added++;
@@ -103,7 +114,7 @@ export function mergeLsbuUe(lsbuRows: Row[], map: Map<string, number>): number {
   return added;
 }
 
-/** KK FORMA0301 → JUMLAH_KARTU (notebook KK Antasena) */
+/** KK FORMA0301 → JUMLAH_KARTU */
 export function mergeLsbuKk(lsbuRows: Row[], map: Map<string, number>): number {
   let added = 0;
   for (const row of lsbuRows) {
@@ -151,3 +162,38 @@ export const ACQUIRER_LSBU_JENIS: { hints: string[]; jenis: string }[] = [
   { hints: ["ue"], jenis: "03-Point Of Sale Uang Elektronik" },
   { hints: ["gabungan"], jenis: "09-Point Of Sale Gabungan" },
 ];
+
+/**
+ * Fraud FORMA0306 per bank — group by SANDI_PELAPOR + JENIS_KARTU
+ * valueField: VOLUME_FRAUD_ACTUAL | NOMINAL_FRAUD_ACTUAL
+ */
+export function mergeLsbuFraudBank(
+  lsbuRows: Row[],
+  map: Map<string, number>,
+  jenisKartu: string,
+  valueField: string,
+  divideBy: number = 1
+): number {
+  let added = 0;
+  for (const row of lsbuRows) {
+    const jk = (pick(row, ["JENIS_KARTU", "jenis_kartu"]) || "").trim();
+    if (jk !== jenisKartu && !jk.includes(jenisKartu.split("-")[0] || "___")) {
+      // soft match: e.g. contains "Kredit" / "Elektronik"
+      const key = jenisKartu.toLowerCase();
+      if (!jk.toLowerCase().includes(key.includes("kredit") ? "kredit" : key.includes("elektronik") ? "elektronik" : key.includes("atm") || key.includes("debet") ? "atm" : "___")) {
+        continue;
+      }
+    }
+    const id = (pick(row, ["SANDI_PELAPOR", "idpelapor"]) || "")
+      .replace(/\.0$/, "")
+      .trim();
+    if (!id) continue;
+    const v =
+      Number(String(pick(row, [valueField]) || "0").replace(/,/g, "")) / divideBy;
+    if (Number.isFinite(v) && v !== 0) {
+      map.set(id, (map.get(id) || 0) + v);
+      added++;
+    }
+  }
+  return added;
+}
