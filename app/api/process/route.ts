@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { previousMonthLabel } from "@/lib/months";
 import { parseCsvText, buildValueMap, matchFile } from "@/lib/parse";
 import { updateMonthColumn } from "@/lib/sheets";
+import { updateMesinAtmMatrix, updateEdcMatrix } from "@/lib/matrix";
 import { GROUPS } from "@/lib/tasks";
 import {
   parseLsbuXlsx,
@@ -36,7 +37,6 @@ export async function POST(req: NextRequest) {
     }
 
     const files = form.getAll("files").filter((f) => f instanceof File) as File[];
-    // Allow zero CSV: all jobs will copy previous month (CLI parity)
 
     const lsbuFile = form.get("lsbu");
     let lsbuInfo: Record<string, unknown> | null = null;
@@ -69,10 +69,15 @@ export async function POST(req: NextRequest) {
 
         if (file) {
           source = "csv";
-          map = buildValueMap(file.rows, job.valueColumn, job.divideBy);
+          map = buildValueMap(
+            file.rows,
+            job.valueColumn,
+            job.divideBy,
+            job.keyColumn
+          );
         }
 
-        // ---- LSBU merges (in-memory) ----
+        // ---- LSBU merges ----
         if (lsbuRows) {
           if (group === "debit" && lsbuKind === "forma0302" && job.valueColumn === "jumlah") {
             if (file && matchFile(file.name, ["kartu_atm", "jumlah_kartu_atm"])) {
@@ -97,10 +102,14 @@ export async function POST(req: NextRequest) {
           }
 
           if (group === "ue" && lsbuKind === "forma0302") {
-            // Jumlah Kartu / jenis UE
-            if (matchFile(job.name, ["Jumlah Kartu"]) || matchFile(job.sheetName, ["Jumlah Kartu"])) {
+            if (job.name === "Jumlah Kartu" || job.sheetName === "Jumlah Kartu") {
               const n = mergeLsbuUe(lsbuRows, map);
-              if (n) results.push({ job: `${job.name} [LSBU]`, status: "info", reason: `+${n} KARTU_ELEKTRONIK` });
+              if (n)
+                results.push({
+                  job: `${job.name} [LSBU]`,
+                  status: "info",
+                  reason: `+${n} KARTU_ELEKTRONIK`,
+                });
             }
             const jenisMap: Record<string, string> = {
               "Chip Based": "051-Chip based",
@@ -122,10 +131,7 @@ export async function POST(req: NextRequest) {
           }
 
           if (group === "kk" && lsbuKind === "forma0301") {
-            if (
-              matchFile(job.name, ["Jumlah Kartu"]) ||
-              (file && matchFile(file.name, ["jumlah_kartu"]))
-            ) {
+            if (job.name.includes("Jumlah Kartu")) {
               const n = mergeLsbuKk(lsbuRows, map);
               if (n)
                 results.push({
@@ -150,17 +156,19 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          if ((group === "fraud_bank" || group === "fraud_penyebab") && lsbuKind === "forma0306") {
-            const card =
-              job.name.includes("Kredit")
-                ? "100-Kartu Kredit"
-                : job.name.includes("Debet") || job.name.includes("ATM")
-                  ? "200-Kartu ATM dan Debet"
-                  : job.name.includes("UE")
-                    ? "500-Uang Elektronik"
-                    : "";
+          if (group === "fraud_bank" && lsbuKind === "forma0306") {
+            const card = job.name.includes("Kredit")
+              ? "100-Kartu Kredit"
+              : job.name.includes("Debet") || job.name.includes("ATM")
+                ? "200-Kartu ATM dan Debet"
+                : job.name.includes("UE")
+                  ? "500-Uang Elektronik"
+                  : "";
             if (card) {
-              const field = job.valueColumn === "expr_2" ? "NOMINAL_FRAUD_ACTUAL" : "VOLUME_FRAUD_ACTUAL";
+              const field =
+                job.valueColumn === "expr_2"
+                  ? "NOMINAL_FRAUD_ACTUAL"
+                  : "VOLUME_FRAUD_ACTUAL";
               const n = mergeLsbuFraudBank(lsbuRows, map, card, field, job.divideBy);
               if (n)
                 results.push({
@@ -189,8 +197,10 @@ export async function POST(req: NextRequest) {
             job: job.name,
             status: source === "none" ? "dry-run-copy-previous" : "dry-run",
             sheet: job.sheetName,
+            kind: job.kind || "column",
             file: file?.name || null,
             ids: map.size,
+            rows: file?.rows.length || 0,
             monthLabel,
             source,
             sample: [...map.entries()].slice(0, 3),
@@ -198,12 +208,66 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
+        // ---- MATRIX writers ----
+        if (job.kind === "matrix-atm") {
+          if (!file) {
+            results.push({
+              job: job.name,
+              status: "skip-matrix-no-csv",
+              reason: "Matrix Mesin ATM butuh CSV mesin_atm (tanpa copy kolom tunggal)",
+            });
+            continue;
+          }
+          const out = await updateMesinAtmMatrix({
+            spreadsheetId,
+            sheetName: job.sheetName,
+            monthLabel,
+            rows: file.rows,
+          });
+          results.push({
+            job: job.name,
+            status: "ok",
+            sheet: job.sheetName,
+            file: file.name,
+            ...out,
+          });
+          continue;
+        }
+
+        if (job.kind === "matrix-edc") {
+          if (!file) {
+            results.push({
+              job: job.name,
+              status: "skip-matrix-no-csv",
+              reason: "Matrix EDC butuh CSV (debet/kredit/ue/gabungan)",
+            });
+            continue;
+          }
+          const out = await updateEdcMatrix({
+            spreadsheetId,
+            sheetName: job.sheetName,
+            monthLabel,
+            rows: file.rows,
+            valueField: job.valueColumn,
+          });
+          results.push({
+            job: job.name,
+            status: "ok",
+            sheet: job.sheetName,
+            file: file.name,
+            ...out,
+          });
+          continue;
+        }
+
+        // ---- single column ----
         const out = await updateMonthColumn({
           spreadsheetId,
           sheetName: job.sheetName,
           monthLabel,
           valuesById: map,
           copyIfEmpty: true,
+          keyHeader: job.keyColumn === "jenisfraud" ? "No" : "No",
         });
         results.push({
           job: job.name,
@@ -216,7 +280,6 @@ export async function POST(req: NextRequest) {
           ...out,
         });
       } catch (e) {
-        // Jangan hentikan seluruh batch — lanjut job berikutnya (CLI-like)
         results.push({
           job: job.name,
           status: "error",
@@ -238,7 +301,9 @@ export async function POST(req: NextRequest) {
       summary: {
         total: results.length,
         errors,
-        ok: results.filter((r) => r.status === "ok" || r.status === "copy-previous").length,
+        ok: results.filter(
+          (r) => r.status === "ok" || r.status === "copy-previous"
+        ).length,
       },
       results,
     });
