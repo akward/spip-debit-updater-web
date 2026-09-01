@@ -3,12 +3,17 @@ import { previousMonthLabel } from "@/lib/months";
 import { parseCsvText, buildValueMap, matchFile } from "@/lib/parse";
 import { updateMonthColumn } from "@/lib/sheets";
 import { GROUPS } from "@/lib/tasks";
-import { parseLsbuXlsx, mergeLsbuDebit } from "@/lib/lsbu";
+import {
+  parseLsbuXlsx,
+  mergeLsbuDebit,
+  mergeLsbuAcquirer,
+  detectLsbuKind,
+  ACQUIRER_LSBU_JENIS,
+} from "@/lib/lsbu";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-/** CSV + LSBU hanya di memori — tidak ke disk/Blob/DB. */
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
@@ -21,39 +26,35 @@ export async function POST(req: NextRequest) {
     const jobs = GROUPS[group];
     if (!jobs) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: `Group tidak didukung: ${group}. Tersedia: ${Object.keys(GROUPS).join(", ")}`,
-        },
+        { ok: false, error: `Group tidak didukung: ${group}` },
         { status: 400 }
       );
     }
 
     const files = form.getAll("files").filter((f) => f instanceof File) as File[];
     if (!files.length) {
-      return NextResponse.json(
-        { ok: false, error: "Upload minimal 1 file CSV." },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "Upload minimal 1 file CSV." }, { status: 400 });
     }
 
     const lsbuFile = form.get("lsbu");
     let lsbuInfo: Record<string, unknown> | null = null;
     let lsbuRows: ReturnType<typeof parseLsbuXlsx> | null = null;
+    let lsbuKind: ReturnType<typeof detectLsbuKind> = "unknown";
     if (lsbuFile instanceof File && lsbuFile.size > 0) {
       const buf = await lsbuFile.arrayBuffer();
       lsbuRows = parseLsbuXlsx(buf);
+      lsbuKind = detectLsbuKind(lsbuFile.name, lsbuRows);
       lsbuInfo = {
         name: lsbuFile.name,
         rows: lsbuRows.length,
-        note: "diproses di memori, tidak disimpan",
+        kind: lsbuKind,
+        note: "memori saja, tidak disimpan",
       };
     }
 
     const parsed: { name: string; rows: ReturnType<typeof parseCsvText> }[] = [];
     for (const f of files) {
-      const text = await f.text();
-      parsed.push({ name: f.name, rows: parseCsvText(text) });
+      parsed.push({ name: f.name, rows: parseCsvText(await f.text()) });
     }
 
     const results: Array<Record<string, unknown>> = [];
@@ -64,32 +65,43 @@ export async function POST(req: NextRequest) {
         results.push({
           job: job.name,
           status: "skip",
-          reason: `Tidak ada CSV yang cocok: ${job.fileHints.join(", ")}`,
+          reason: `Tidak ada CSV: ${job.fileHints.join(", ")}`,
         });
         continue;
       }
 
       const map = buildValueMap(file.rows, job.valueColumn, job.divideBy);
 
-      // Merge LSBU into jumlah kartu jobs (debit)
-      if (group === "debit" && lsbuRows && job.valueColumn === "jumlah") {
-        if (matchFile(file.name, ["kartu_atm", "jumlah_kartu_atm"])) {
-          const m = mergeLsbuDebit(lsbuRows, { kartuAtm: map });
-          results.push({
-            job: job.name + " [LSBU]",
-            status: "info",
-            reason: `LSBU merge kartu ATM: +${m.addedAtm} baris`,
-          });
+      if (lsbuRows) {
+        if (group === "debit" && lsbuKind === "forma0302" && job.valueColumn === "jumlah") {
+          if (matchFile(file.name, ["kartu_atm", "jumlah_kartu_atm"])) {
+            const m = mergeLsbuDebit(lsbuRows, { kartuAtm: map });
+            results.push({
+              job: `${job.name} [LSBU 0302]`,
+              status: "info",
+              reason: `+${m.addedAtm} dari LSBU KARTU_ATM`,
+            });
+          }
+          if (matchFile(file.name, ["kartu_debit", "jumlah_kartu_debet", "kartu_debet"])) {
+            const m = mergeLsbuDebit(lsbuRows, { kartuDebit: map });
+            results.push({
+              job: `${job.name} [LSBU 0302]`,
+              status: "info",
+              reason: `+${m.addedDebit} dari LSBU KARTU_ATM_DEBIT`,
+            });
+          }
         }
-        if (
-          matchFile(file.name, ["kartu_debit", "jumlah_kartu_debet", "kartu_debet"])
-        ) {
-          const m = mergeLsbuDebit(lsbuRows, { kartuDebit: map });
-          results.push({
-            job: job.name + " [LSBU]",
-            status: "info",
-            reason: `LSBU merge kartu Debit: +${m.addedDebit} baris`,
-          });
+        if (group === "acquirer" && lsbuKind === "forma0304") {
+          for (const rule of ACQUIRER_LSBU_JENIS) {
+            if (matchFile(file.name, rule.hints)) {
+              const n = mergeLsbuAcquirer(lsbuRows, rule.jenis, map, "JUMLAH_MESIN");
+              results.push({
+                job: `${job.name} [LSBU 0304]`,
+                status: "info",
+                reason: `+${n} dari ${rule.jenis}`,
+              });
+            }
+          }
         }
       }
 
@@ -99,7 +111,6 @@ export async function POST(req: NextRequest) {
           job: job.name,
           status: "error",
           reason: `Env ${job.spreadsheetEnv} belum di-set`,
-          file: file.name,
           ids: map.size,
         });
         continue;
@@ -113,7 +124,7 @@ export async function POST(req: NextRequest) {
           file: file.name,
           ids: map.size,
           monthLabel,
-          sample: [...map.entries()].slice(0, 5),
+          sample: [...map.entries()].slice(0, 3),
         });
         continue;
       }
@@ -139,7 +150,6 @@ export async function POST(req: NextRequest) {
           job: job.name,
           status: "error",
           sheet: job.sheetName,
-          file: file.name,
           reason: e instanceof Error ? e.message : String(e),
         });
       }
@@ -150,7 +160,7 @@ export async function POST(req: NextRequest) {
       group,
       monthLabel,
       dryRun,
-      storage: "none — CSV/LSBU hanya di memori selama request",
+      storage: "none — CSV/LSBU hanya memori",
       lsbu: lsbuInfo,
       files: parsed.map((p) => ({ name: p.name, rows: p.rows.length })),
       results,
