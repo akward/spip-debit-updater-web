@@ -28,6 +28,7 @@ type ProcessResponse = {
   error?: string;
   monthLabel?: string;
   dryRun?: boolean;
+  storage?: string;
   files?: { name: string; rows: number }[];
   results?: Array<Record<string, unknown>>;
 };
@@ -99,15 +100,24 @@ export default function HomePage() {
         <div>
           <h1>SPIP Debit Updater</h1>
           <p>
-            Upload CSV → update Google Sheets (semua group). Unduh hasil dari spreadsheet
-            lewat bagian Download.
+            Semua proses di website: upload CSV → update Google Sheets → unduh hasil.
+            Tidak perlu menjalankan Python di PC lokal.
           </p>
         </div>
-        <span className="badge">Semua group · upload · download</span>
+        <span className="badge">100% web · CSV tidak disimpan</span>
       </header>
 
       <section className="panel">
-        <h2>1. Upload CSV & proses</h2>
+        <h2>Privasi & storage</h2>
+        <div className="ok">
+          File CSV <strong>tidak disimpan</strong> di server Vercel (tidak ke disk, Blob, atau database).
+          File hanya dibaca di memori selama request, lalu hasil ditulis langsung ke Google Sheets.
+          Setelah request selesai, data upload hilang dari server.
+        </div>
+      </section>
+
+      <section className="panel">
+        <h2>1. Upload CSV & proses di web</h2>
         <form onSubmit={onSubmit}>
           <div style={{ display: "grid", gap: 12, maxWidth: 640 }}>
             <label>
@@ -125,7 +135,7 @@ export default function HomePage() {
               </select>
             </label>
             <label>
-              File CSV (banyak file)
+              File CSV (banyak file — tidak disimpan di server)
               <input
                 type="file"
                 accept=".csv,text/csv"
@@ -166,6 +176,12 @@ export default function HomePage() {
           <h2>Hasil proses</h2>
           <p style={{ color: "var(--muted)" }}>
             Bulan: <code>{log.monthLabel}</code> {log.dryRun ? "· dry-run" : "· write"}
+            {log.storage ? (
+              <>
+                <br />
+                Storage: <code>{log.storage}</code>
+              </>
+            ) : null}
           </p>
           {log.files && (
             <div className="cmd">{log.files.map((f) => `${f.name} (${f.rows} rows)`).join("\n")}</div>
@@ -202,7 +218,7 @@ export default function HomePage() {
       <section className="panel">
         <h2>2. Download data dari Google Spreadsheet</h2>
         <p style={{ color: "var(--muted)", marginTop: 0 }}>
-          Ambil data terbaru dari sheet yang sudah di-update (export CSV).
+          Data hasil update dibaca langsung dari Google Sheets (bukan dari storage website).
         </p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
           <select
@@ -252,36 +268,32 @@ export default function HomePage() {
       </section>
 
       <section className="panel">
-        <h2>3. Environment Variables (Vercel)</h2>
-        <div className="warn">
-          Vercel → Project → Settings → Environment Variables. Apply ke Production + Preview.
-          Share setiap spreadsheet ke <code>client_email</code> service account (Editor).
+        <h2>3. Environment Variables (sudah Anda set)</h2>
+        <div className="ok">
+          Setelah env terpasang, seluruh alur berjalan di website. Pastikan spreadsheet di-share ke
+          service account (Editor).
         </div>
         <table style={{ marginTop: 12 }}>
           <thead>
             <tr>
               <th>Key</th>
               <th>Keterangan</th>
-              <th>Contoh nilai</th>
             </tr>
           </thead>
           <tbody>
-            {ENV_ROWS.map(([k, d, ex]) => (
+            {ENV_ROWS.map(([k, d]) => (
               <tr key={k}>
                 <td>
                   <code>{k}</code>
                 </td>
                 <td>{d}</td>
-                <td>
-                  <code style={{ fontSize: 11 }}>{ex}</code>
-                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </section>
 
-      <footer className="footer">SPIP · semua group · upload CSV · download hasil sheet</footer>
+      <footer className="footer">SPIP · proses di web · CSV tidak disimpan di server</footer>
     </main>
   );
 }
