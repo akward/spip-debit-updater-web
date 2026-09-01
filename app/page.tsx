@@ -2,61 +2,50 @@
 
 import { useState } from "react";
 
-/**
- * LSBU per group — sesuai notebook:
- * - debit_google sheet.ipynb
- * - UE_google sheet.ipynb
- * - KK Antasena_google sheet.ipynb
- * - Acquirer Tahun 2026 (r)_google sheet.ipynb
- * - fraud per bank / Fraud Per Penyebab_google sheet.ipynb
- */
 const GROUPS = [
   {
     id: "debit",
     title: "Debit / ATM",
     lsbu: "LSBU_VW_FORMA0302.xlsx",
     lsbuNote:
-      "JENIS_DATA 001-Jumlah Kartu → KARTU_ATM / KARTU_ATM_DEBIT; 121-Jumlah Mesin ATM; transaksi tarik/belanja/transfer (KOTA = -)",
+      "JENIS_DATA 001-Jumlah Kartu → KARTU_ATM / KARTU_ATM_DEBIT; transaksi (KOTA = -)",
   },
   {
     id: "ue",
     title: "Uang Elektronik",
     lsbu: "LSBU_VW_FORMA0302.xlsx",
     lsbuNote:
-      "Kolom KARTU_ELEKTRONIK. Filter JENIS_DATA: 001-Jumlah Kartu, 051-Chip based, 052-Server based, 056-Registered, 057-Unregistered, plus kode transaksi UE (initial/topup/belanja/…)",
+      "KARTU_ELEKTRONIK · 001-Jumlah Kartu, 051-Chip, 052-Server, 056-Registered, 057-Unregistered",
   },
   {
     id: "kk",
     title: "Kartu Kredit",
     lsbu: "LSBU_VW_FORMA0301.xlsx",
-    lsbuNote: "Kolom SANDI_PELAPOR + JUMLAH_KARTU → Jumlah Kartu Kredit",
+    lsbuNote: "SANDI_PELAPOR + JUMLAH_KARTU → Jumlah Kartu",
   },
   {
     id: "acquirer",
     title: "Acquirer",
     lsbu: "LSBU_VW_FORMA0304.xlsx",
-    lsbuNote:
-      "FORMA0304: JENIS_MESIN POS Debit/Kredit/UE/Gabungan (KOTA=-). Opsional FORMA0303 untuk transaksi interchange on-us/off-us",
+    lsbuNote: "FORMA0304 POS Debit/Kredit/UE/Gabungan (KOTA=-)",
   },
   {
     id: "fraud_bank",
     title: "Fraud per Bank",
     lsbu: "LSBU_VW_FORMA0306.xlsx",
-    lsbuNote:
-      "Filter JENIS_KARTU (100-Kartu Kredit / 200-ATM Debet / 500-Uang Elektronik) → VOLUME_FRAUD_ACTUAL + NOMINAL_FRAUD_ACTUAL",
+    lsbuNote: "JENIS_KARTU + VOLUME/NOMINAL_FRAUD_ACTUAL",
   },
   {
     id: "fraud_penyebab",
     title: "Fraud per Penyebab",
     lsbu: "LSBU_VW_FORMA0306.xlsx",
-    lsbuNote:
-      "Sama FORMA0306, digroup per JENIS_FRAUD lalu dipetakan ke kode CP/PL/HD/TD/FA/X",
+    lsbuNote: "FORMA0306 per JENIS_FRAUD → kode CP/PL/HD/TD/FA/X",
   },
   {
     id: "prop_channel",
     title: "Prop Channel",
     lsbu: null,
-    lsbuNote: "Tidak memakai LSBU (sumber CSV Prop Channel / Delivery Channel)",
+    lsbuNote: "Tanpa LSBU (CSV Prop Channel)",
   },
 ];
 
@@ -79,6 +68,7 @@ type ProcessResponse = {
   storage?: string;
   lsbu?: { name: string; rows: number; kind?: string } | null;
   files?: { name: string; rows: number }[];
+  summary?: { total: number; errors: number; ok: number };
   results?: Array<Record<string, unknown>>;
 };
 
@@ -98,17 +88,14 @@ export default function HomePage() {
     e.preventDefault();
     setError(null);
     setLog(null);
-    if (!files?.length) {
-      setError("Pilih minimal 1 file CSV.");
-      return;
-    }
+    // CSV boleh kosong → copy bulan sebelumnya (sama CLI)
     setLoading(true);
     try {
       const fd = new FormData();
       fd.set("group", group);
       fd.set("dryRun", dryRun ? "1" : "0");
       if (monthLabel.trim()) fd.set("monthLabel", monthLabel.trim());
-      Array.from(files).forEach((f) => fd.append("files", f));
+      if (files?.length) Array.from(files).forEach((f) => fd.append("files", f));
       if (lsbu) fd.set("lsbu", lsbu);
       const res = await fetch("/api/process", { method: "POST", body: fd });
       const data = (await res.json()) as ProcessResponse;
@@ -127,22 +114,19 @@ export default function HomePage() {
         <div>
           <h1>SPIP Debit Updater</h1>
           <p>
-            Upload CSV + LSBU → update Google Sheets → unduh <strong>satu file per laporan</strong>{" "}
-            (ATM, UE, Fraud, …). File upload tidak disimpan di server.
+            Setara CLI: CSV + LSBU → Google Sheets. Tanpa CSV = copy bulan sebelumnya. Error per
+            job tidak menghentikan batch. Upload tidak disimpan di server.
           </p>
         </div>
-        <span className="badge">1 file = 1 spreadsheet</span>
+        <span className="badge">CLI parity · copy-previous · continue-on-error</span>
       </header>
 
       <section className="panel">
         <h2>Panduan file LSBU per group</h2>
-        <p style={{ color: "var(--muted)", marginTop: 0, fontSize: 0.9 }}>
-          Sumber: notebook <code>UE_google sheet.ipynb</code>, debit, KK, Acquirer, Fraud.
-        </p>
         <table>
           <thead>
             <tr>
-              <th>Group / laporan</th>
+              <th>Group</th>
               <th>File LSBU</th>
               <th>Keterangan</th>
             </tr>
@@ -188,7 +172,7 @@ export default function HomePage() {
             </label>
 
             <label>
-              File CSV (banyak file)
+              File CSV (opsional — kosong = copy bulan sebelumnya)
               <input
                 type="file"
                 accept=".csv,text/csv"
@@ -199,7 +183,7 @@ export default function HomePage() {
             </label>
 
             <label>
-              File LSBU (.xlsx) — sesuai group di atas
+              File LSBU (.xlsx)
               <input
                 type="file"
                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -210,16 +194,12 @@ export default function HomePage() {
             <div className={groupMeta?.lsbu ? "ok" : "warn"} style={{ fontSize: 0.9 }}>
               {groupMeta?.lsbu ? (
                 <>
-                  Group <strong>{groupMeta.title}</strong> → unggah{" "}
-                  <code>{groupMeta.lsbu}</code>
+                  Group <strong>{groupMeta.title}</strong> → <code>{groupMeta.lsbu}</code>
                   <br />
                   {groupMeta.lsbuNote}
                 </>
               ) : (
-                <>
-                  Group <strong>{groupMeta?.title}</strong> tidak memakai LSBU. Kolom upload LSBU boleh
-                  dikosongkan.
-                </>
+                <>Group ini tanpa LSBU.</>
               )}
             </div>
 
@@ -257,6 +237,12 @@ export default function HomePage() {
           <h2>Hasil proses</h2>
           <p style={{ color: "var(--muted)" }}>
             Bulan: <code>{log.monthLabel}</code> {log.dryRun ? "· dry-run" : "· write"}
+            {log.summary ? (
+              <>
+                {" · "}
+                ok/copy: {log.summary.ok}/{log.summary.total} · error: {log.summary.errors}
+              </>
+            ) : null}
             {log.lsbu ? (
               <>
                 <br />
@@ -297,14 +283,13 @@ export default function HomePage() {
       <section className="panel">
         <h2>2. Download file Google Spreadsheet</h2>
         <p style={{ color: "var(--muted)", marginTop: 0 }}>
-          Satu tombol = <strong>satu file Excel (.xlsx)</strong> berisi seluruh isi spreadsheet group
-          tersebut (bukan per tab).
+          Satu tombol = satu file Excel (.xlsx) seluruh spreadsheet group.
         </p>
         <table>
           <thead>
             <tr>
               <th>Laporan</th>
-              <th>Unduh file</th>
+              <th>Unduh</th>
             </tr>
           </thead>
           <tbody>
@@ -350,7 +335,9 @@ export default function HomePage() {
         </table>
       </section>
 
-      <footer className="footer">SPIP · UE = FORMA0302 (KARTU_ELEKTRONIK) · unduh per file</footer>
+      <footer className="footer">
+        SPIP · copy bulan sebelumnya jika CSV kosong · error tidak menghentikan batch
+      </footer>
     </main>
   );
 }
