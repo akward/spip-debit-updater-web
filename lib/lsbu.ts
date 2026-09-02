@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import type { Row } from "./parse";
+import { normalizeId } from "./parse";
 
 export function parseLsbuXlsx(buf: ArrayBuffer): Row[] {
   const wb = XLSX.read(buf, { type: "array" });
@@ -56,9 +57,7 @@ function kotaOk(row: Row): boolean {
 }
 
 function idOf(row: Row): string {
-  return (pick(row, ["SANDI_PELAPOR", "idpelapor"]) || "")
-    .replace(/\.0$/, "")
-    .trim();
+  return normalizeId(pick(row, ["SANDI_PELAPOR", "idpelapor"]) || "");
 }
 
 function num(row: Row, cols: string[]): number {
@@ -66,7 +65,6 @@ function num(row: Row, cols: string[]): number {
   return Number.isFinite(v) ? v : 0;
 }
 
-/** Debit FORMA0302 → KARTU_ATM / KARTU_ATM_DEBIT */
 export function mergeLsbuDebit(
   lsbuRows: Row[],
   maps: { kartuAtm?: Map<string, number>; kartuDebit?: Map<string, number> }
@@ -97,11 +95,6 @@ export function mergeLsbuDebit(
   return { addedAtm, addedDebit };
 }
 
-/**
- * Debit FORMA0302 JENIS_DATA 121-Jumlah Mesin ATM
- * Notebook: KARTU_ATM + KARTU_ATM_DEBIT → expr_1 (disimpan sebagai tipe ACMAT di matrix).
- * Menghasilkan rows sintetis {idpelapor, jenismesin: ACMAT, expr_1}
- */
 export function lsbuMesinAtmRows(lsbuRows: Row[]): Row[] {
   const byId = new Map<string, number>();
   for (const row of lsbuRows) {
@@ -116,16 +109,11 @@ export function lsbuMesinAtmRows(lsbuRows: Row[]): Row[] {
   }
   const out: Row[] = [];
   for (const [id, v] of byId) {
-    out.push({
-      idpelapor: id,
-      jenismesin: "ACMAT",
-      expr_1: String(v),
-    });
+    out.push({ idpelapor: id, jenismesin: "ACMAT", expr_1: String(v) });
   }
   return out;
 }
 
-/** Debit FORMA0302 transaksi → merge ke map by single or multi JENIS_DATA */
 export function mergeLsbuDebitTrx(
   lsbuRows: Row[],
   map: Map<string, number>,
@@ -137,17 +125,12 @@ export function mergeLsbuDebitTrx(
   for (const row of lsbuRows) {
     if (!kotaOk(row)) continue;
     const jenis = (pick(row, ["JENIS_DATA"]) || "").trim();
-    if (!jenisList.some((j) => jenis === j || jenis.includes(j.split("-")[0] || "___"))) {
-      if (!jenisList.includes(jenis)) continue;
-    }
-    // exact match preferred
-    if (!jenisList.includes(jenis) && !jenisList.some((j) => jenis.startsWith(j.slice(0, 3)))) {
-      if (!jenisList.includes(jenis)) continue;
-    }
     if (!jenisList.includes(jenis)) continue;
     const id = idOf(row);
     if (!id) continue;
-    const v = num(row, [valueCol, "VOLUME_TRANSAKSI", "NILAI_TRANSAKSI", "KARTU_ATM"]) / divideBy;
+    const v =
+      num(row, [valueCol, "VOLUME_TRANSAKSI", "NILAI_TRANSAKSI", "KARTU_ATM"]) /
+      divideBy;
     if (v !== 0) {
       map.set(id, (map.get(id) || 0) + v);
       added++;
@@ -156,7 +139,6 @@ export function mergeLsbuDebitTrx(
   return added;
 }
 
-/** Job name → JENIS_DATA list + value column for Debit FORMA0302 */
 export const DEBIT_TRX_LSBU: {
   match: string[];
   jenis: string[];
@@ -232,7 +214,6 @@ export function mergeLsbuUeByJenis(
     if (!list.includes(jenis)) continue;
     const id = idOf(row);
     if (!id) continue;
-    // value: prefer explicit col, else VOLUME/NILAI/KARTU_ELEKTRONIK
     const v =
       num(row, [valueCol, "KARTU_ELEKTRONIK", "VOLUME_TRANSAKSI", "NILAI_TRANSAKSI"]) /
       divideBy;
@@ -244,7 +225,6 @@ export function mergeLsbuUeByJenis(
   return added;
 }
 
-/** UE job → JENIS_DATA codes from notebook */
 export const UE_LSBU_MAP: {
   match: string[];
   jenis: string[];
@@ -386,7 +366,6 @@ export const ACQUIRER_LSBU_JENIS: { hints: string[]; jenis: string }[] = [
   { hints: ["gabungan"], jenis: "09-Point Of Sale Gabungan" },
 ];
 
-/** FORMA0303 interchange */
 export function mergeLsbuForma0303(
   lsbuRows: Row[],
   map: Map<string, number>,
@@ -397,7 +376,6 @@ export function mergeLsbuForma0303(
   let added = 0;
   for (const row of lsbuRows) {
     const trx = (pick(row, ["TRANSAKSI"]) || "").trim();
-    if (trx !== transaksi && !trx.includes(transaksi.split("-")[0] || "___")) continue;
     if (trx !== transaksi) continue;
     const id = idOf(row);
     if (!id) continue;
@@ -480,7 +458,6 @@ export function mergeLsbuFraudBank(
   return added;
 }
 
-/** Fraud penyebab: JENIS_FRAUD → CP/PL/HD/TD/FA/X */
 export const FRAUD_PENYEBAB_MAP: Record<string, string> = {
   "50-Transaksi tanpa menggunakan kartu/Card not present": "CP",
   "10-Kartu palsu": "PL",
