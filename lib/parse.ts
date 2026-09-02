@@ -51,7 +51,6 @@ export function buildValueMap(
   valueColumn: string,
   divideBy: number,
   keyColumn?: string,
-  /** filter rows by jenistransaksi (e.g. BL / BY) — notebook KK Belanja vs Bill Payment */
   filterJenis?: string
 ): Map<string, number> {
   const map = new Map<string, number>();
@@ -82,34 +81,37 @@ export function buildValueMap(
     if (!id || id === "Total") continue;
 
     let valRaw: string | undefined;
+    // Always prefer exact column name first (vol_atm, nom_ue, vol_inter, …)
+    const exact = pick(row, [valueColumn, valueColumn.toLowerCase(), valueColumn.toUpperCase()]);
     if (valueColumn === "jumlah") {
-      valRaw = pick(row, ["jumlah"]) || pick(row, ["expr_1"]) || undefined;
+      valRaw = exact || pick(row, ["jumlah"]) || pick(row, ["expr_1"]) || undefined;
       if (!valRaw) {
         const a = Number(pick(row, ["jumlah_kartu"]) || 0);
         const b = Number(pick(row, ["jumlah_kartu_ditutup"]) || 0);
         valRaw = String(a - b);
       }
+    } else if (exact !== undefined) {
+      valRaw = exact;
     } else if (isNominal) {
-      // nominal: jangan ambil frekuensi dulu
       valRaw = pick(row, [
-        valueColumn,
         "expr_2",
-        "sum(nominaltransaksi)",
         "sum(nominaltransaksi)",
         "nominaltransaksi",
         "NILAI_TRANSAKSI",
+        "jumlah_merchant",
+        "JUMLAH_MERCHANT",
       ]);
     } else if (isVolume) {
       valRaw = pick(row, [
-        valueColumn,
         "expr_1",
         "sum(frekuensitransaksi)",
         "frekuensitransaksi",
         "VOLUME_TRANSAKSI",
+        "jumlah_mesin",
+        "JUMLAH_MESIN",
       ]);
     } else {
       valRaw = pick(row, [
-        valueColumn,
         valueColumn.toUpperCase(),
         "sum(frekuensitransaksi)",
         "sum(nominaltransaksi)",
@@ -143,15 +145,20 @@ export function findBestFile<
       const hl = h.toLowerCase();
       if (!n.includes(hl)) continue;
       const stem = n.replace(/\.csv$/i, "").replace(/\.xlsx$/i, "");
-      let score = hl.length;
-      if (stem === hl || stem.endsWith(hl) || stem.startsWith(hl)) score += 50;
+      let score = hl.length * 2;
+      if (stem === hl || stem.endsWith(hl) || stem.startsWith(hl)) score += 80;
+      // Prefer longer/more specific hints (e.g. off_us_internasional > off_us)
+      if (hl.includes("internasional") && n.includes("internasional")) score += 100;
+      if (hl.includes("internasional") && !n.includes("internasional")) score -= 200;
+      if (hl.includes("on_us") && n.includes("on_us") && !n.includes("off")) score += 40;
+      if (hl.includes("off_us") && n.includes("off_us") && !n.includes("internasional")) score += 40;
       if (score > bestScore) {
         bestScore = score;
         best = f;
       }
     }
   }
-  return best;
+  return bestScore > 0 ? best : undefined;
 }
 
 export function lookupId(map: Map<string, number>, rawKey: string): number {
