@@ -241,13 +241,34 @@ export function mergeLsbuKk(lsbuRows: Row[], map: Map<string, number>): number {
   return added;
 }
 
-/** KK FORMA0301 — JUMLAH_ACCOUNT */
 export function mergeLsbuKkAccount(lsbuRows: Row[], map: Map<string, number>): number {
   let added = 0;
   for (const row of lsbuRows) {
     const id = idOf(row);
     if (!id) continue;
     const v = num(row, ["JUMLAH_ACCOUNT"]);
+    if (v !== 0) {
+      map.set(id, (map.get(id) || 0) + v);
+      added++;
+    }
+  }
+  return added;
+}
+
+/** Generic: sum several FORMA0301 columns per SANDI_PELAPOR, then ÷ divideBy */
+export function mergeLsbuKkSumCols(
+  lsbuRows: Row[],
+  map: Map<string, number>,
+  cols: string[],
+  divideBy = 1
+): number {
+  let added = 0;
+  for (const row of lsbuRows) {
+    const id = idOf(row);
+    if (!id) continue;
+    let sum = 0;
+    for (const c of cols) sum += num(row, [c]);
+    const v = sum / divideBy;
     if (v !== 0) {
       map.set(id, (map.get(id) || 0) + v);
       added++;
@@ -267,25 +288,12 @@ const KK_OUTSTANDING_COLS = [
   "NOMINAL_OUTSTANDING_180_DPD",
 ];
 
-/** KK FORMA0301 — sum outstanding (notebook), ÷ divideBy */
 export function mergeLsbuKkOutstanding(
   lsbuRows: Row[],
   map: Map<string, number>,
   divideBy = 1_000_000
 ): number {
-  let added = 0;
-  for (const row of lsbuRows) {
-    const id = idOf(row);
-    if (!id) continue;
-    let sum = 0;
-    for (const c of KK_OUTSTANDING_COLS) sum += num(row, [c]);
-    const v = sum / divideBy;
-    if (v !== 0) {
-      map.set(id, (map.get(id) || 0) + v);
-      added++;
-    }
-  }
-  return added;
+  return mergeLsbuKkSumCols(lsbuRows, map, KK_OUTSTANDING_COLS, divideBy);
 }
 
 const KK_NPL_COLS = [
@@ -295,26 +303,66 @@ const KK_NPL_COLS = [
   "NOMINAL_OUTSTANDING_180_DPD",
 ];
 
-/** KK FORMA0301 — NPL = sum 90–180 DPD (notebook), ÷ divideBy */
 export function mergeLsbuKkNpl(
   lsbuRows: Row[],
   map: Map<string, number>,
   divideBy = 1_000_000
 ): number {
-  let added = 0;
-  for (const row of lsbuRows) {
-    const id = idOf(row);
-    if (!id) continue;
-    let sum = 0;
-    for (const c of KK_NPL_COLS) sum += num(row, [c]);
-    const v = sum / divideBy;
-    if (v !== 0) {
-      map.set(id, (map.get(id) || 0) + v);
-      added++;
-    }
-  }
-  return added;
+  return mergeLsbuKkSumCols(lsbuRows, map, KK_NPL_COLS, divideBy);
 }
+
+/**
+ * KK FORMA0301 — semua sheet (notebook):
+ * - Kartu / Account: single column
+ * - Outstanding / NPL: sum DPD columns
+ * - Tunai / Belanja: domestik + internasional
+ * - Reversal: tidak ada di notebook (CSV only)
+ */
+export const KK_LSBU_MAP: {
+  match: string;
+  cols: string[];
+  divideBy: number;
+  label: string;
+}[] = [
+  { match: "Jumlah Kartu", cols: ["JUMLAH_KARTU"], divideBy: 1, label: "JUMLAH_KARTU" },
+  { match: "Jumlah Account", cols: ["JUMLAH_ACCOUNT"], divideBy: 1, label: "JUMLAH_ACCOUNT" },
+  {
+    match: "Nilai Outstanding",
+    cols: KK_OUTSTANDING_COLS,
+    divideBy: 1_000_000,
+    label: "SUM outstanding",
+  },
+  {
+    match: "Nilai NPL",
+    cols: KK_NPL_COLS,
+    divideBy: 1_000_000,
+    label: "SUM NPL 90-180 DPD",
+  },
+  {
+    match: "Volume Tunai",
+    cols: ["VOLUME_TUNAI_DOMESTIK", "VOLUME_TUNAI_INTERNASIONAL"],
+    divideBy: 1,
+    label: "VOLUME_TUNAI dom+intl",
+  },
+  {
+    match: "Nilai Tunai",
+    cols: ["NILAI_TUNAI_DOMESTIK", "NILAI_TUNAI_INTERNASIONAL"],
+    divideBy: 1_000_000,
+    label: "NILAI_TUNAI dom+intl",
+  },
+  {
+    match: "Volume Belanja",
+    cols: ["VOLUME_BELANJA_DOMESTIK", "VOLUME_BELANJA_INTERNASIONAL"],
+    divideBy: 1,
+    label: "VOLUME_BELANJA dom+intl",
+  },
+  {
+    match: "Nilai Belanja",
+    cols: ["NILAI_BELANJA_DOMESTIK", "NILAI_BELANJA_INTERNASIONAL"],
+    divideBy: 1_000_000,
+    label: "NILAI_BELANJA dom+intl",
+  },
+];
 
 export function mergeLsbuAcquirer(
   lsbuRows: Row[],
