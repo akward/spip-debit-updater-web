@@ -8,44 +8,46 @@ const GROUPS = [
     title: "Debit / ATM",
     lsbu: "LSBU_VW_FORMA0302.xlsx",
     lsbuNote:
-      "JENIS_DATA 001-Jumlah Kartu → KARTU_ATM / KARTU_ATM_DEBIT; transaksi (KOTA = -)",
+      "001-Jumlah Kartu (KARTU_ATM/DEBIT) · 121-Jumlah Mesin ATM · 082/102 tarik · 087/107 belanja · 091/111 interbank · 092/112 antarbank",
   },
   {
     id: "ue",
     title: "Uang Elektronik",
     lsbu: "LSBU_VW_FORMA0302.xlsx",
     lsbuNote:
-      "KARTU_ELEKTRONIK · 001-Jumlah Kartu, 051-Chip, 052-Server, 056-Registered, 057-Unregistered",
+      "001/051/052/056/057/070/122 · Initial 096/116 · Topup 097/117 · Transfer 093/113 · Tunai 098/118 · Redeem 099/119 · Belanja 086+087 / 106+107",
   },
   {
     id: "kk",
     title: "Kartu Kredit",
     lsbu: "LSBU_VW_FORMA0301.xlsx",
-    lsbuNote: "SANDI_PELAPOR + JUMLAH_KARTU → Jumlah Kartu",
+    lsbuNote: "SANDI_PELAPOR + JUMLAH_KARTU",
   },
   {
     id: "acquirer",
     title: "Acquirer",
-    lsbu: "LSBU_VW_FORMA0304.xlsx",
-    lsbuNote: "FORMA0304 POS Debit/Kredit/UE/Gabungan (KOTA=-)",
+    lsbu: "LSBU_VW_FORMA0304.xlsx + LSBU_VW_FORMA0303.xlsx",
+    lsbuNote:
+      "0304: POS Debit/Kredit/UE/Gabungan · 0303: 51-Internasional & 52-Domestik interchange (upload keduanya)",
   },
   {
     id: "fraud_bank",
     title: "Fraud per Bank",
     lsbu: "LSBU_VW_FORMA0306.xlsx",
-    lsbuNote: "JENIS_KARTU + VOLUME/NOMINAL_FRAUD_ACTUAL",
+    lsbuNote: "JENIS_KARTU 100/200/500 → VOLUME/NOMINAL_FRAUD_ACTUAL per idpelapor",
   },
   {
     id: "fraud_penyebab",
     title: "Fraud per Penyebab",
     lsbu: "LSBU_VW_FORMA0306.xlsx",
-    lsbuNote: "FORMA0306 per JENIS_FRAUD → kode CP/PL/HD/TD/FA/X",
+    lsbuNote:
+      "JENIS_FRAUD → CP/PL/HD/TD/FA/X (50→CP, 10→PL, 20→HD, 30→TD, 40→FA, 99→X)",
   },
   {
     id: "prop_channel",
     title: "Prop Channel",
     lsbu: null,
-    lsbuNote: "Tanpa LSBU (CSV Prop Channel)",
+    lsbuNote: "Tanpa LSBU",
   },
 ];
 
@@ -66,7 +68,7 @@ type ProcessResponse = {
   monthLabel?: string;
   dryRun?: boolean;
   storage?: string;
-  lsbu?: { name: string; rows: number; kind?: string } | null;
+  lsbu?: Array<{ name: string; rows: number; kind?: string }> | null;
   files?: { name: string; rows: number }[];
   summary?: { total: number; errors: number; ok: number };
   results?: Array<Record<string, unknown>>;
@@ -75,7 +77,7 @@ type ProcessResponse = {
 export default function HomePage() {
   const [group, setGroup] = useState("debit");
   const [files, setFiles] = useState<FileList | null>(null);
-  const [lsbu, setLsbu] = useState<File | null>(null);
+  const [lsbuFiles, setLsbuFiles] = useState<FileList | null>(null);
   const [monthLabel, setMonthLabel] = useState("");
   const [dryRun, setDryRun] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -88,7 +90,6 @@ export default function HomePage() {
     e.preventDefault();
     setError(null);
     setLog(null);
-    // CSV boleh kosong → copy bulan sebelumnya (sama CLI)
     setLoading(true);
     try {
       const fd = new FormData();
@@ -96,7 +97,8 @@ export default function HomePage() {
       fd.set("dryRun", dryRun ? "1" : "0");
       if (monthLabel.trim()) fd.set("monthLabel", monthLabel.trim());
       if (files?.length) Array.from(files).forEach((f) => fd.append("files", f));
-      if (lsbu) fd.set("lsbu", lsbu);
+      if (lsbuFiles?.length)
+        Array.from(lsbuFiles).forEach((f) => fd.append("lsbu", f));
       const res = await fetch("/api/process", { method: "POST", body: fd });
       const data = (await res.json()) as ProcessResponse;
       if (!res.ok || !data.ok) setError(data.error || "Gagal memproses");
@@ -114,11 +116,11 @@ export default function HomePage() {
         <div>
           <h1>SPIP Debit Updater</h1>
           <p>
-            Setara CLI: CSV + LSBU → Google Sheets. Tanpa CSV = copy bulan sebelumnya. Error per
-            job tidak menghentikan batch. Upload tidak disimpan di server.
+            Mapping LSBU mengikuti notebook. Multi-file LSBU (mis. 0304+0303). Tanpa CSV =
+            copy bulan sebelumnya.
           </p>
         </div>
-        <span className="badge">CLI parity · copy-previous · continue-on-error</span>
+        <span className="badge">notebook parity</span>
       </header>
 
       <section className="panel">
@@ -160,12 +162,17 @@ export default function HomePage() {
               <select
                 value={group}
                 onChange={(e) => setGroup(e.target.value)}
-                style={{ display: "block", width: "100%", marginTop: 6, padding: 10, borderRadius: 8 }}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  marginTop: 6,
+                  padding: 10,
+                  borderRadius: 8,
+                }}
               >
                 {GROUPS.map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.title}
-                    {g.lsbu ? ` · ${g.lsbu.replace("LSBU_VW_", "").replace(".xlsx", "")}` : ""}
                   </option>
                 ))}
               </select>
@@ -183,11 +190,12 @@ export default function HomePage() {
             </label>
 
             <label>
-              File LSBU (.xlsx)
+              File LSBU (.xlsx) — bisa lebih dari satu (Acquirer: 0304 + 0303)
               <input
                 type="file"
                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                onChange={(e) => setLsbu(e.target.files?.[0] || null)}
+                multiple
+                onChange={(e) => setLsbuFiles(e.target.files)}
                 style={{ display: "block", marginTop: 6 }}
               />
             </label>
@@ -210,12 +218,22 @@ export default function HomePage() {
                 placeholder="Juli 2026"
                 value={monthLabel}
                 onChange={(e) => setMonthLabel(e.target.value)}
-                style={{ display: "block", width: "100%", marginTop: 6, padding: 10, borderRadius: 8 }}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  marginTop: 6,
+                  padding: 10,
+                  borderRadius: 8,
+                }}
               />
             </label>
 
             <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={dryRun}
+                onChange={(e) => setDryRun(e.target.checked)}
+              />
               Dry-run
             </label>
 
@@ -240,14 +258,20 @@ export default function HomePage() {
             {log.summary ? (
               <>
                 {" · "}
-                ok/copy: {log.summary.ok}/{log.summary.total} · error: {log.summary.errors}
+ok/copy: {log.summary.ok}/{log.summary.total} · error: {log.summary.errors}
               </>
             ) : null}
-            {log.lsbu ? (
+            {Array.isArray(log.lsbu) && log.lsbu.length ? (
               <>
                 <br />
-                LSBU: <code>{log.lsbu.name}</code> ({log.lsbu.rows} rows
-                {log.lsbu.kind ? `, ${log.lsbu.kind}` : ""})
+                LSBU:{" "}
+                {log.lsbu.map((l, i) => (
+                  <span key={i}>
+                    {i > 0 ? ", " : ""}
+                    <code>{l.name}</code> ({l.rows}
+                    {l.kind ? `, ${l.kind}` : ""})
+                  </span>
+                ))}
               </>
             ) : null}
           </p>
@@ -282,9 +306,6 @@ export default function HomePage() {
 
       <section className="panel">
         <h2>2. Download file Google Spreadsheet</h2>
-        <p style={{ color: "var(--muted)", marginTop: 0 }}>
-          Satu tombol = satu file Excel (.xlsx) seluruh spreadsheet group.
-        </p>
         <table>
           <thead>
             <tr>
@@ -335,9 +356,7 @@ export default function HomePage() {
         </table>
       </section>
 
-      <footer className="footer">
-        SPIP · copy bulan sebelumnya jika CSV kosong · error tidak menghentikan batch
-      </footer>
+      <footer className="footer">SPIP · LSBU mapping = notebook</footer>
     </main>
   );
 }
