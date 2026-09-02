@@ -5,9 +5,7 @@ export type SheetJob = {
   valueColumn: string;
   divideBy: number;
   spreadsheetEnv: string;
-  /** multi-column writers */
   kind?: "column" | "matrix-atm" | "matrix-edc";
-  /** fraud penyebab uses jenisfraud key */
   keyColumn?: string;
 };
 
@@ -25,14 +23,14 @@ export const DEBIT_JOBS: SheetJob[] = [
   {
     name: "Jumlah Mesin ATM",
     sheetName: "Jumlah Mesin ATM",
-    fileHints: ["mesin_atm", "jumlah_mesin_atm", "mesin"],
+    fileHints: ["mesin_atm", "jumlah_mesin_atm"],
     valueColumn: "expr_1",
     divideBy: 1,
     spreadsheetEnv: D,
     kind: "matrix-atm",
   },
-  { name: "Volume Transaksi Tunai", sheetName: "Volume Transaksi Tunai", fileHints: ["tarik_tunai", "tarik"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: D },
-  { name: "Nominal Transaksi Tunai", sheetName: "Nominal Transaksi Tunai", fileHints: ["tarik_tunai", "tarik"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: D },
+  { name: "Volume Transaksi Tunai", sheetName: "Volume Transaksi Tunai", fileHints: ["tarik_tunai"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: D },
+  { name: "Nominal Transaksi Tunai", sheetName: "Nominal Transaksi Tunai", fileHints: ["tarik_tunai"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: D },
   { name: "Volume Transaksi Setor Tunai", sheetName: "Volume Transaksi Setor Tunai", fileHints: ["setor", "stor_tunai"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: D },
   { name: "Nominal Transaksi Setor Tunai", sheetName: "Nominal Transaksi Setor Tunai", fileHints: ["setor", "stor_tunai"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: D },
   { name: "Volume Transaksi Belanja", sheetName: "Volume Transaksi Belanja", fileHints: ["belanja", "transaksi_belanja"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: D },
@@ -47,6 +45,10 @@ export const DEBIT_JOBS: SheetJob[] = [
   { name: "Nominal Transaksi Reversal", sheetName: "Nominal Transaksi Reversal", fileHints: ["reversal"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: D },
 ];
 
+/**
+ * UE — fileHints harus spesifik agar tidak bentrok:
+ * transfer.xlsx ≠ transfer_rekening.xlsx ≠ transfer_pemerintah.xlsx
+ */
 export const UE_JOBS: SheetJob[] = [
   { name: "Jumlah Kartu", sheetName: "Jumlah Kartu", fileHints: ["jumlah_ue", "jumlahue"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
   { name: "Chip Based", sheetName: "Chip Based", fileHints: ["chip_base", "chipbased"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
@@ -54,7 +56,7 @@ export const UE_JOBS: SheetJob[] = [
   { name: "Registered", sheetName: "Registered", fileHints: ["registered"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
   { name: "Unregistered", sheetName: "Unregistered", fileHints: ["unregistered"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
   { name: "Dana Float", sheetName: "Dana Float", fileHints: ["dana_float", "danafloat"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
-  { name: "Jumlah Reader", sheetName: "Jumlah Reader", fileHints: ["jumlah_reader", "reader"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: U },
+  { name: "Jumlah Reader", sheetName: "Jumlah Reader", fileHints: ["jumlah_reader"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: U },
   { name: "Volume Belanja", sheetName: "Volume", fileHints: ["belanja"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: U },
   { name: "Nilai Belanja", sheetName: "Nilai", fileHints: ["belanja"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: U },
   { name: "Vol Pembayaran", sheetName: "Vol Pembayaran", fileHints: ["pembayaran"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: U },
@@ -63,12 +65,55 @@ export const UE_JOBS: SheetJob[] = [
   { name: "Nom Initial", sheetName: "Nom Initial", fileHints: ["initial"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: U },
   { name: "Vol Top Up", sheetName: "Vol Top Up", fileHints: ["topup", "top_up"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: U },
   { name: "Nom Top Up", sheetName: "Nom Top Up", fileHints: ["topup", "top_up"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: U },
-  { name: "Vol Transfer", sheetName: "Vol Transfer", fileHints: ["transfer"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: U },
-  { name: "Nom Transfer", sheetName: "Nom Transfer", fileHints: ["transfer"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: U },
-  { name: "Vol Transfer Rek", sheetName: "Vol Transfer Rek", fileHints: ["transfer_rekening", "transfer_rek"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: U },
-  { name: "Nom Transfer Rek", sheetName: "Nom Transfer Rek", fileHints: ["transfer_rekening", "transfer_rek"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: U },
-  { name: "Vol Transfer Pemerintah", sheetName: "Vol Transfer Pemerintah", fileHints: ["transfer_pemerintah", "transfer_pem"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: U },
-  { name: "Nom Transfer Pemerintah", sheetName: "Nom Transfer Pemerintah", fileHints: ["transfer_pemerintah", "transfer_pem"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: U },
+  // Transfer antar UE — hanya file bernama transfer (bukan rekening/pemerintah)
+  {
+    name: "Vol Transfer",
+    sheetName: "Vol Transfer",
+    fileHints: ["transfer.xlsx", "transfer.csv", "/transfer.", "ue_transfer", "transaksi_transfer"],
+    valueColumn: "expr_1",
+    divideBy: 1,
+    spreadsheetEnv: U,
+  },
+  {
+    name: "Nom Transfer",
+    sheetName: "Nom Transfer",
+    fileHints: ["transfer.xlsx", "transfer.csv", "/transfer.", "ue_transfer", "transaksi_transfer"],
+    valueColumn: "expr_2",
+    divideBy: 1_000_000,
+    spreadsheetEnv: U,
+  },
+  {
+    name: "Vol Transfer Rek",
+    sheetName: "Vol Transfer Rek",
+    fileHints: ["transfer_rekening", "transfer_rek", "rekening"],
+    valueColumn: "expr_1",
+    divideBy: 1,
+    spreadsheetEnv: U,
+  },
+  {
+    name: "Nom Transfer Rek",
+    sheetName: "Nom Transfer Rek",
+    fileHints: ["transfer_rekening", "transfer_rek", "rekening"],
+    valueColumn: "expr_2",
+    divideBy: 1_000_000,
+    spreadsheetEnv: U,
+  },
+  {
+    name: "Vol Transfer Pemerintah",
+    sheetName: "Vol Transfer Pemerintah",
+    fileHints: ["transfer_pemerintah", "transfer_pem", "pemerintah"],
+    valueColumn: "expr_1",
+    divideBy: 1,
+    spreadsheetEnv: U,
+  },
+  {
+    name: "Nom Transfer Pemerintah",
+    sheetName: "Nom Transfer Pemerintah",
+    fileHints: ["transfer_pemerintah", "transfer_pem", "pemerintah"],
+    valueColumn: "expr_2",
+    divideBy: 1_000_000,
+    spreadsheetEnv: U,
+  },
   { name: "Vol Tunai", sheetName: "Vol Tunai", fileHints: ["tunai"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: U },
   { name: "Nom Tunai", sheetName: "Nom Tunai", fileHints: ["tunai"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: U },
   { name: "Vol Redeem", sheetName: "Vol Redeem", fileHints: ["reedem", "redeem"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: U },
@@ -103,7 +148,7 @@ export const ACQUIRER_JOBS: SheetJob[] = [
   {
     name: "EDC Kredit",
     sheetName: "EDC Kredit",
-    fileHints: ["kredit", "kredit.xlsx"],
+    fileHints: ["kredit"],
     valueColumn: "expr_1",
     divideBy: 1,
     spreadsheetEnv: AT,
@@ -169,7 +214,7 @@ function propJobs(prefix: string, sheetPrefix: string, filePrefix: string): Shee
     out.push({
       name: `${prefix} Vol ${label}`,
       sheetName: `${sheetPrefix} Vol ${label}`,
-      fileHints: [`${filePrefix}_${filePart}`, `${filePrefix}${filePart}`, filePart],
+      fileHints: [`${filePrefix}_${filePart}`, `${filePrefix}${filePart}`],
       valueColumn: "expr_1",
       divideBy: 1,
       spreadsheetEnv: P,
@@ -177,7 +222,7 @@ function propJobs(prefix: string, sheetPrefix: string, filePrefix: string): Shee
     out.push({
       name: `${prefix} Nom ${label}`,
       sheetName: `${sheetPrefix} Nom ${label}`,
-      fileHints: [`${filePrefix}_${filePart}`, `${filePrefix}${filePart}`, filePart],
+      fileHints: [`${filePrefix}_${filePart}`, `${filePrefix}${filePart}`],
       valueColumn: "expr_2",
       divideBy: 1_000_000,
       spreadsheetEnv: P,
