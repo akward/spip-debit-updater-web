@@ -41,6 +41,53 @@ function pick(row: Row, names: string[]): string | undefined {
   return undefined;
 }
 
+/** Quote sheet title for A1 notation */
+function qSheet(title: string): string {
+  // escape single quotes inside title
+  return `'${title.replace(/'/g, "''")}'`;
+}
+
+/**
+ * Resolve actual worksheet title (exact / case-insensitive / alias).
+ * Avoids "Unable to parse range" when the tab name differs slightly.
+ */
+async function resolveSheetTitle(
+  spreadsheetId: string,
+  wanted: string,
+  aliases: string[] = []
+): Promise<string> {
+  const sheets = await getSheetsClient();
+  const meta = await withRetry(() =>
+    sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: "sheets.properties.title",
+    })
+  );
+  const titles =
+    meta.data.sheets?.map((s) => String(s.properties?.title || "")) || [];
+  const candidates = [wanted, ...aliases].filter(Boolean);
+
+  for (const c of candidates) {
+    if (titles.includes(c)) return c;
+  }
+  const lower = (s: string) => s.trim().toLowerCase();
+  for (const c of candidates) {
+    const hit = titles.find((t) => lower(t) === lower(c));
+    if (hit) return hit;
+  }
+  // partial contains
+  for (const c of candidates) {
+    const hit = titles.find(
+      (t) => lower(t).includes(lower(c)) || lower(c).includes(lower(t))
+    );
+    if (hit) return hit;
+  }
+
+  throw new Error(
+    `Worksheet tidak ditemukan: "${wanted}". Sheet yang ada: ${titles.slice(0, 30).join(" | ")}`
+  );
+}
+
 const ATM_TYPE_MAP: Record<string, number> = {
   ACMAT: 0,
   ACMCD: 1,
@@ -57,7 +104,7 @@ export async function updateMesinAtmMatrix(opts: {
   headerBulanRow?: number;
   headerColRow?: number;
   dataStartRow?: number;
-}): Promise<{ written: number; appended: number; mode: string }> {
+}): Promise<{ written: number; appended: number; mode: string; sheet?: string }> {
   const {
     spreadsheetId,
     sheetName = "Jumlah Mesin ATM",
@@ -68,17 +115,18 @@ export async function updateMesinAtmMatrix(opts: {
     dataStartRow = 5,
   } = opts;
 
+  const resolved = await resolveSheetTitle(spreadsheetId, sheetName);
   const sheets = await getSheetsClient();
   const res = await withRetry(() =>
     sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `'${sheetName}'!A1:ZZ`,
+      range: `${qSheet(resolved)}!A1:AZ5000`,
       majorDimension: "ROWS",
     })
   );
   const sheetValues = res.data.values || [];
   if (sheetValues.length < headerColRow) {
-    throw new Error(`Sheet ${sheetName} terlalu pendek`);
+    throw new Error(`Sheet ${resolved} terlalu pendek`);
   }
 
   const subHeaders = sheetValues[headerColRow - 1].map((h) => String(h ?? ""));
@@ -110,7 +158,7 @@ export async function updateMesinAtmMatrix(opts: {
     await withRetry(() =>
       sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `'${sheetName}'!${colToA1(startCol0 + 1)}${headerBulanRow}`,
+        range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${headerBulanRow}`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: [[monthLabel]] },
       })
@@ -118,7 +166,7 @@ export async function updateMesinAtmMatrix(opts: {
     await withRetry(() =>
       sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `'${sheetName}'!${colToA1(startCol0 + 1)}${headerColRow}`,
+        range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${headerColRow}`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: [ATM_SUB] },
       })
@@ -145,7 +193,7 @@ export async function updateMesinAtmMatrix(opts: {
     await withRetry(() =>
       sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `'${sheetName}'!${colToA1(startCol0 + 1)}${dataStartRow}:${colToA1(startCol0 + 5)}${dataStartRow + matrix.length - 1}`,
+        range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${dataStartRow}:${colToA1(startCol0 + 5)}${dataStartRow + matrix.length - 1}`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: matrix },
       })
@@ -157,12 +205,12 @@ export async function updateMesinAtmMatrix(opts: {
     if (vals[4] <= 0) continue;
     if (existing.has(id)) continue;
     const newRow: (string | number)[] = Array(startCol0 + 5).fill("");
-    newRow[0] = id; // 9-digit string keeps leading zeros
+    newRow[0] = id;
     for (let i = 0; i < 5; i++) newRow[startCol0 + i] = vals[i];
     await withRetry(() =>
       sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: `'${sheetName}'!A${dataStartRow}`,
+        range: `${qSheet(resolved)}!A${dataStartRow}`,
         valueInputOption: "USER_ENTERED",
         insertDataOption: "INSERT_ROWS",
         requestBody: { values: [newRow] },
@@ -172,10 +220,19 @@ export async function updateMesinAtmMatrix(opts: {
   }
 
   await sleep(400);
-  return { written: matrix.length, appended, mode: "matrix-atm" };
+  return { written: matrix.length, appended, mode: "matrix-atm", sheet: resolved };
 }
 
 const EDC_SUB = ["Open Loop", "Close Loop", "Total"];
+
+/** Aliases notebook ↔ config */
+const EDC_SHEET_ALIASES: Record<string, string[]> = {
+  "EDC UE": ["EDC Uang Elektronik", "EDC UE", "EDC UangElektronik"],
+  "EDC Uang Elektronik": ["EDC Uang Elektronik", "EDC UE"],
+  "EDC Debet": ["EDC Debet", "EDC Debit"],
+  "EDC Kredit": ["EDC Kredit", "EDC Credit"],
+  "EDC Gabungan": ["EDC Gabungan"],
+};
 
 export async function updateEdcMatrix(opts: {
   spreadsheetId: string;
@@ -186,7 +243,7 @@ export async function updateEdcMatrix(opts: {
   headerBulanRow?: number;
   headerColRow?: number;
   dataStartRow?: number;
-}): Promise<{ written: number; appended: number; mode: string }> {
+}): Promise<{ written: number; appended: number; mode: string; sheet?: string }> {
   const {
     spreadsheetId,
     sheetName,
@@ -198,17 +255,21 @@ export async function updateEdcMatrix(opts: {
     dataStartRow = 5,
   } = opts;
 
+  const aliases = EDC_SHEET_ALIASES[sheetName] || [sheetName];
+  const resolved = await resolveSheetTitle(spreadsheetId, sheetName, aliases);
+
   const sheets = await getSheetsClient();
   const res = await withRetry(() =>
     sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `'${sheetName}'!A1:ZZ`,
+      // A1:AZ5000 more reliable than A1:ZZ (parse errors on some APIs)
+      range: `${qSheet(resolved)}!A1:AZ5000`,
       majorDimension: "ROWS",
     })
   );
   const sheetValues = res.data.values || [];
   if (sheetValues.length < headerColRow) {
-    throw new Error(`Sheet ${sheetName} terlalu pendek`);
+    throw new Error(`Sheet ${resolved} terlalu pendek`);
   }
 
   const subHeaders = sheetValues[headerColRow - 1].map((h) => String(h ?? ""));
@@ -242,7 +303,7 @@ export async function updateEdcMatrix(opts: {
     await withRetry(() =>
       sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `'${sheetName}'!${colToA1(startCol0 + 1)}${headerBulanRow}`,
+        range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${headerBulanRow}`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: [[monthLabel]] },
       })
@@ -250,7 +311,7 @@ export async function updateEdcMatrix(opts: {
     await withRetry(() =>
       sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `'${sheetName}'!${colToA1(startCol0 + 1)}${headerColRow}`,
+        range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${headerColRow}`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: [EDC_SUB] },
       })
@@ -277,7 +338,7 @@ export async function updateEdcMatrix(opts: {
     await withRetry(() =>
       sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `'${sheetName}'!${colToA1(startCol0 + 1)}${dataStartRow}:${colToA1(startCol0 + 3)}${dataStartRow + matrix.length - 1}`,
+        range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${dataStartRow}:${colToA1(startCol0 + 3)}${dataStartRow + matrix.length - 1}`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: matrix },
       })
@@ -294,7 +355,7 @@ export async function updateEdcMatrix(opts: {
     await withRetry(() =>
       sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: `'${sheetName}'!A${dataStartRow}`,
+        range: `${qSheet(resolved)}!A${dataStartRow}`,
         valueInputOption: "USER_ENTERED",
         insertDataOption: "INSERT_ROWS",
         requestBody: { values: [newRow] },
@@ -304,5 +365,5 @@ export async function updateEdcMatrix(opts: {
   }
 
   await sleep(400);
-  return { written: matrix.length, appended, mode: "matrix-edc" };
+  return { written: matrix.length, appended, mode: "matrix-edc", sheet: resolved };
 }
