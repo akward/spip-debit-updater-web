@@ -2,11 +2,6 @@ import Papa from "papaparse";
 
 export type Row = Record<string, string>;
 
-/**
- * Normalisasi id pelapor / kolom No:
- * - jika numerik dan < 9 digit → pad leading zero jadi 9 digit (sesuai CSV)
- * - kode fraud (CP, PL, …) dan non-numerik dibiarkan apa adanya
- */
 export function normalizeId(raw: string | number | null | undefined): string {
   if (raw === null || raw === undefined) return "";
   let s = String(raw).replace(/\.0$/, "").trim();
@@ -43,7 +38,9 @@ function pick(row: Row, names: string[]): string | undefined {
     if (found && row[found] !== undefined && row[found] !== "") return row[found];
   }
   for (const n of names) {
-    const found = keys.find((k) => k.trim().toLowerCase().includes(n.toLowerCase()));
+    const found = keys.find((k) =>
+      k.trim().toLowerCase().includes(n.toLowerCase())
+    );
     if (found && row[found] !== undefined && row[found] !== "") return row[found];
   }
   return undefined;
@@ -53,14 +50,32 @@ export function buildValueMap(
   rows: Row[],
   valueColumn: string,
   divideBy: number,
-  keyColumn?: string
+  keyColumn?: string,
+  /** filter rows by jenistransaksi (e.g. BL / BY) — notebook KK Belanja vs Bill Payment */
+  filterJenis?: string
 ): Map<string, number> {
   const map = new Map<string, number>();
   const keyNames = keyColumn
     ? [keyColumn, "jenisfraud", "JENIS_FRAUD", "No"]
     : ["idpelapor", "SANDI_PELAPOR", "No", "id"];
 
+  const vc = valueColumn.toLowerCase();
+  const isVolume =
+    vc === "expr_1" ||
+    vc.includes("vol") ||
+    vc.includes("frekuensi") ||
+    vc === "jumlah";
+  const isNominal =
+    vc === "expr_2" || vc.includes("nom") || vc.includes("nilai");
+
   for (const row of rows) {
+    if (filterJenis) {
+      const jt = (
+        pick(row, ["jenistransaksi", "JENIS_TRANSAKSI", "jenis"]) || ""
+      ).trim();
+      if (jt !== filterJenis) continue;
+    }
+
     const idRaw = pick(row, keyNames);
     if (!idRaw) continue;
     const id = normalizeId(idRaw);
@@ -74,6 +89,24 @@ export function buildValueMap(
         const b = Number(pick(row, ["jumlah_kartu_ditutup"]) || 0);
         valRaw = String(a - b);
       }
+    } else if (isNominal) {
+      // nominal: jangan ambil frekuensi dulu
+      valRaw = pick(row, [
+        valueColumn,
+        "expr_2",
+        "sum(nominaltransaksi)",
+        "sum(nominaltransaksi)",
+        "nominaltransaksi",
+        "NILAI_TRANSAKSI",
+      ]);
+    } else if (isVolume) {
+      valRaw = pick(row, [
+        valueColumn,
+        "expr_1",
+        "sum(frekuensitransaksi)",
+        "frekuensitransaksi",
+        "VOLUME_TRANSAKSI",
+      ]);
     } else {
       valRaw = pick(row, [
         valueColumn,
@@ -94,21 +127,11 @@ function basename(filename: string): string {
   return filename.toLowerCase().replace(/\\/g, "/").split("/").pop() || "";
 }
 
-/**
- * Match sederhana (substring).
- * Catatan: untuk job yang saling overlap (transfer vs transfer_rekening),
- * pakai findBestFile().
- */
 export function matchFile(filename: string, hints: string[]): boolean {
   const n = basename(filename);
   return hints.some((h) => n.includes(h.toLowerCase()));
 }
 
-/**
- * Pilih file terbaik: skor = panjang hint yang match (lebih spesifik menang).
- * Contoh: transfer_rekening.xlsx → job "transfer_rekening" (skor tinggi),
- * bukan job "transfer" (skor rendah).
- */
 export function findBestFile<
   T extends { name: string }
 >(files: T[], hints: string[]): T | undefined {
@@ -119,7 +142,6 @@ export function findBestFile<
     for (const h of hints) {
       const hl = h.toLowerCase();
       if (!n.includes(hl)) continue;
-      // bonus jika hint hampir sama dengan stem file (tanpa ekstensi)
       const stem = n.replace(/\.csv$/i, "").replace(/\.xlsx$/i, "");
       let score = hl.length;
       if (stem === hl || stem.endsWith(hl) || stem.startsWith(hl)) score += 50;
