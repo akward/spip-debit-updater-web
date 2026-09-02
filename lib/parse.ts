@@ -11,12 +11,10 @@ export function normalizeId(raw: string | number | null | undefined): string {
   if (raw === null || raw === undefined) return "";
   let s = String(raw).replace(/\.0$/, "").trim();
   if (!s || s === "Total") return s;
-  // pure digits only → pad to 9
   if (/^\d+$/.test(s)) {
     if (s.length < 9) s = s.padStart(9, "0");
     return s;
   }
-  // scientific / float-like "123456789.0" already stripped; mixed leave as-is
   return s;
 }
 
@@ -92,16 +90,51 @@ export function buildValueMap(
   return map;
 }
 
+function basename(filename: string): string {
+  return filename.toLowerCase().replace(/\\/g, "/").split("/").pop() || "";
+}
+
+/**
+ * Match sederhana (substring).
+ * Catatan: untuk job yang saling overlap (transfer vs transfer_rekening),
+ * pakai findBestFile().
+ */
 export function matchFile(filename: string, hints: string[]): boolean {
-  const n = filename.toLowerCase().replace(/\\/g, "/").split("/").pop() || "";
+  const n = basename(filename);
   return hints.some((h) => n.includes(h.toLowerCase()));
 }
 
-/** Lookup nilai di map dengan normalisasi 9-digit */
+/**
+ * Pilih file terbaik: skor = panjang hint yang match (lebih spesifik menang).
+ * Contoh: transfer_rekening.xlsx → job "transfer_rekening" (skor tinggi),
+ * bukan job "transfer" (skor rendah).
+ */
+export function findBestFile<
+  T extends { name: string }
+>(files: T[], hints: string[]): T | undefined {
+  let best: T | undefined;
+  let bestScore = 0;
+  for (const f of files) {
+    const n = basename(f.name);
+    for (const h of hints) {
+      const hl = h.toLowerCase();
+      if (!n.includes(hl)) continue;
+      // bonus jika hint hampir sama dengan stem file (tanpa ekstensi)
+      const stem = n.replace(/\.csv$/i, "").replace(/\.xlsx$/i, "");
+      let score = hl.length;
+      if (stem === hl || stem.endsWith(hl) || stem.startsWith(hl)) score += 50;
+      if (score > bestScore) {
+        bestScore = score;
+        best = f;
+      }
+    }
+  }
+  return best;
+}
+
 export function lookupId(map: Map<string, number>, rawKey: string): number {
   const key = normalizeId(rawKey);
   if (map.has(key)) return map.get(key)!;
-  // fallback tanpa pad / numeric strip
   const bare = String(rawKey).replace(/\.0$/, "").trim();
   if (map.has(bare)) return map.get(bare)!;
   if (/^\d+$/.test(bare) && map.has(String(Number(bare)))) {
