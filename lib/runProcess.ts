@@ -29,6 +29,33 @@ import {
   type LsbuKind,
 } from "@/lib/lsbu";
 
+/** Alias env agar nama di Vercel fleksibel (mis. SHEET_ACQUIRER_TAHUN = SHEET_ACQUIRER_EDC) */
+const ENV_ALIASES: Record<string, string[]> = {
+  SHEET_ACQUIRER_EDC: [
+    "SHEET_ACQUIRER_TAHUN",
+    "SHEET_ACQUIRER",
+    "SHEET_ACQUIRER_MESIN",
+    "SHEET_ACQUIRER_EDC",
+  ],
+  SHEET_ACQUIRER_TRX: [
+    "SHEET_ACQUIRER_TRX",
+    "SHEET_ACQUIRER_TRANSAKSI",
+    "SHEET_ACQUIRER",
+  ],
+};
+
+function resolveSpreadsheetId(primaryEnv: string): string | undefined {
+  const keys = [primaryEnv, ...(ENV_ALIASES[primaryEnv] || [])];
+  const seen = new Set<string>();
+  for (const k of keys) {
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const v = process.env[k]?.trim();
+    if (v) return v;
+  }
+  return undefined;
+}
+
 function basename(name: string): string {
   return name.toLowerCase().replace(/\\/g, "/").split("/").pop() || "";
 }
@@ -270,12 +297,15 @@ async function processOneJob(opts: {
     }
   }
 
-  const spreadsheetId = process.env[job.spreadsheetEnv];
+  const spreadsheetId = resolveSpreadsheetId(job.spreadsheetEnv);
   if (!spreadsheetId) {
+    const tried = ENV_ALIASES[job.spreadsheetEnv]
+      ? [job.spreadsheetEnv, ...ENV_ALIASES[job.spreadsheetEnv]]
+      : [job.spreadsheetEnv];
     outRows.push({
       job: job.name,
       status: "error",
-      reason: `Env ${job.spreadsheetEnv} belum di-set`,
+      reason: `Env ${tried.join(" / ")} belum di-set`,
       ids: map.size,
       source,
     });
