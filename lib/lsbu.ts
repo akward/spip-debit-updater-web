@@ -40,11 +40,30 @@ export function detectLsbuKind(filename: string, rows: Row[]): LsbuKind {
   if (n.includes("0303")) return "forma0303";
   if (n.includes("0304")) return "forma0304";
   if (n.includes("0306")) return "forma0306";
-  if (rows[0] && pick(rows[0], ["JENIS_DATA"])) return "forma0302";
-  if (rows[0] && pick(rows[0], ["JENIS_MESIN"])) return "forma0304";
-  if (rows[0] && pick(rows[0], ["JUMLAH_KARTU"])) return "forma0301";
   if (rows[0] && pick(rows[0], ["VOLUME_FRAUD_ACTUAL"])) return "forma0306";
+  if (rows[0] && pick(rows[0], ["JENIS_MESIN"]) && pick(rows[0], ["JUMLAH_MESIN"]))
+    return "forma0304";
+  if (rows[0] && pick(rows[0], ["TRANSAKSI"]) && pick(rows[0], ["VOLUME_TRANSAKSI"]))
+    return "forma0303";
+  if (rows[0] && pick(rows[0], ["JUMLAH_KARTU"])) return "forma0301";
+  if (rows[0] && pick(rows[0], ["JENIS_DATA"])) return "forma0302";
   return "unknown";
+}
+
+function kotaOk(row: Row): boolean {
+  const kota = (pick(row, ["KOTA", "kota"]) || "").trim();
+  return kota === "-" || kota === "";
+}
+
+function idOf(row: Row): string {
+  return (pick(row, ["SANDI_PELAPOR", "idpelapor"]) || "")
+    .replace(/\.0$/, "")
+    .trim();
+}
+
+function num(row: Row, cols: string[]): number {
+  const v = Number(String(pick(row, cols) || "0").replace(/,/g, ""));
+  return Number.isFinite(v) ? v : 0;
 }
 
 /** Debit FORMA0302 → KARTU_ATM / KARTU_ATM_DEBIT */
@@ -55,26 +74,21 @@ export function mergeLsbuDebit(
   let addedAtm = 0;
   let addedDebit = 0;
   for (const row of lsbuRows) {
-    const jenis = (pick(row, ["JENIS_DATA", "jenis_data"]) || "").trim();
-    const kota = (pick(row, ["KOTA", "kota"]) || "").trim();
-    if (kota !== "-" && kota !== "") continue;
-    if (!jenis.includes("001-Jumlah Kartu") && !jenis.startsWith("001")) continue;
-    const id = (pick(row, ["SANDI_PELAPOR", "idpelapor"]) || "")
-      .replace(/\.0$/, "")
-      .trim();
+    if (!kotaOk(row)) continue;
+    const jenis = (pick(row, ["JENIS_DATA"]) || "").trim();
+    if (jenis !== "001-Jumlah Kartu" && !jenis.startsWith("001")) continue;
+    const id = idOf(row);
     if (!id) continue;
     if (maps.kartuAtm) {
-      const v = Number(String(pick(row, ["KARTU_ATM"]) || "0").replace(/,/g, ""));
-      if (Number.isFinite(v) && v !== 0) {
+      const v = num(row, ["KARTU_ATM"]);
+      if (v !== 0) {
         maps.kartuAtm.set(id, (maps.kartuAtm.get(id) || 0) + v);
         addedAtm++;
       }
     }
     if (maps.kartuDebit) {
-      const v = Number(
-        String(pick(row, ["KARTU_ATM_DEBIT"]) || "0").replace(/,/g, "")
-      );
-      if (Number.isFinite(v) && v !== 0) {
+      const v = num(row, ["KARTU_ATM_DEBIT"]);
+      if (v !== 0) {
         maps.kartuDebit.set(id, (maps.kartuDebit.get(id) || 0) + v);
         addedDebit++;
       }
@@ -83,30 +97,58 @@ export function mergeLsbuDebit(
   return { addedAtm, addedDebit };
 }
 
-/** UE FORMA0302 → KARTU_ELEKTRONIK, JENIS_DATA 001-Jumlah Kartu */
-export function mergeLsbuUe(lsbuRows: Row[], map: Map<string, number>): number {
-  return mergeLsbuUeByJenis(lsbuRows, map, "001-Jumlah Kartu");
+/**
+ * Debit FORMA0302 JENIS_DATA 121-Jumlah Mesin ATM
+ * Notebook: KARTU_ATM + KARTU_ATM_DEBIT → expr_1 (disimpan sebagai tipe ACMAT di matrix).
+ * Menghasilkan rows sintetis {idpelapor, jenismesin: ACMAT, expr_1}
+ */
+export function lsbuMesinAtmRows(lsbuRows: Row[]): Row[] {
+  const byId = new Map<string, number>();
+  for (const row of lsbuRows) {
+    if (!kotaOk(row)) continue;
+    const jenis = (pick(row, ["JENIS_DATA"]) || "").trim();
+    if (jenis !== "121-Jumlah Mesin ATM" && !jenis.includes("121-Jumlah Mesin")) continue;
+    const id = idOf(row);
+    if (!id) continue;
+    const v = num(row, ["KARTU_ATM"]) + num(row, ["KARTU_ATM_DEBIT"]);
+    if (v === 0) continue;
+    byId.set(id, (byId.get(id) || 0) + v);
+  }
+  const out: Row[] = [];
+  for (const [id, v] of byId) {
+    out.push({
+      idpelapor: id,
+      jenismesin: "ACMAT",
+      expr_1: String(v),
+    });
+  }
+  return out;
 }
 
-/** UE FORMA0302 by exact/partial JENIS_DATA */
-export function mergeLsbuUeByJenis(
+/** Debit FORMA0302 transaksi → merge ke map by single or multi JENIS_DATA */
+export function mergeLsbuDebitTrx(
   lsbuRows: Row[],
   map: Map<string, number>,
-  jenisFilter: string,
-  valueCol: string = "KARTU_ELEKTRONIK"
+  jenisList: string[],
+  valueCol: string,
+  divideBy = 1
 ): number {
   let added = 0;
   for (const row of lsbuRows) {
-    const jenis = (pick(row, ["JENIS_DATA", "jenis_data"]) || "").trim();
-    const kota = (pick(row, ["KOTA", "kota"]) || "").trim();
-    if (kota !== "-" && kota !== "") continue;
-    if (!jenis.includes(jenisFilter) && jenis !== jenisFilter) continue;
-    const id = (pick(row, ["SANDI_PELAPOR", "idpelapor"]) || "")
-      .replace(/\.0$/, "")
-      .trim();
+    if (!kotaOk(row)) continue;
+    const jenis = (pick(row, ["JENIS_DATA"]) || "").trim();
+    if (!jenisList.some((j) => jenis === j || jenis.includes(j.split("-")[0] || "___"))) {
+      if (!jenisList.includes(jenis)) continue;
+    }
+    // exact match preferred
+    if (!jenisList.includes(jenis) && !jenisList.some((j) => jenis.startsWith(j.slice(0, 3)))) {
+      if (!jenisList.includes(jenis)) continue;
+    }
+    if (!jenisList.includes(jenis)) continue;
+    const id = idOf(row);
     if (!id) continue;
-    const v = Number(String(pick(row, [valueCol]) || "0").replace(/,/g, ""));
-    if (Number.isFinite(v) && v !== 0) {
+    const v = num(row, [valueCol, "VOLUME_TRANSAKSI", "NILAI_TRANSAKSI", "KARTU_ATM"]) / divideBy;
+    if (v !== 0) {
       map.set(id, (map.get(id) || 0) + v);
       added++;
     }
@@ -114,16 +156,200 @@ export function mergeLsbuUeByJenis(
   return added;
 }
 
-/** KK FORMA0301 → JUMLAH_KARTU */
+/** Job name → JENIS_DATA list + value column for Debit FORMA0302 */
+export const DEBIT_TRX_LSBU: {
+  match: string[];
+  jenis: string[];
+  valueCol: string;
+  divideBy: number;
+}[] = [
+  {
+    match: ["Volume Transaksi Tunai"],
+    jenis: ["082-Volume transaksi tarik tunai domestik"],
+    valueCol: "VOLUME_TRANSAKSI",
+    divideBy: 1,
+  },
+  {
+    match: ["Nominal Transaksi Tunai"],
+    jenis: ["102-Nominal transaksi tarik tunai domestik"],
+    valueCol: "NILAI_TRANSAKSI",
+    divideBy: 1_000_000,
+  },
+  {
+    match: ["Volume Transaksi Belanja"],
+    jenis: ["087-Volume transaksi belanja domestik"],
+    valueCol: "VOLUME_TRANSAKSI",
+    divideBy: 1,
+  },
+  {
+    match: ["Nominal Transaksi Belanja"],
+    jenis: ["107-Nominal transaksi belanja domestik"],
+    valueCol: "NILAI_TRANSAKSI",
+    divideBy: 1_000_000,
+  },
+  {
+    match: ["Volume Transaksi Transfer"],
+    jenis: ["091-Volume transaksi transfer interbank"],
+    valueCol: "VOLUME_TRANSAKSI",
+    divideBy: 1,
+  },
+  {
+    match: ["Nominal Transaksi Transfer"],
+    jenis: ["111-Nominal transaksi transfer interbank"],
+    valueCol: "NILAI_TRANSAKSI",
+    divideBy: 1_000_000,
+  },
+  {
+    match: ["Volume Transaksi Transfer (2)"],
+    jenis: ["092-Volume transaksi transfer antarbank"],
+    valueCol: "VOLUME_TRANSAKSI",
+    divideBy: 1,
+  },
+  {
+    match: ["Nominal Transaksi Transfer (2)"],
+    jenis: ["112-Nominal transaksi transfer antarbank"],
+    valueCol: "NILAI_TRANSAKSI",
+    divideBy: 1_000_000,
+  },
+];
+
+export function mergeLsbuUe(lsbuRows: Row[], map: Map<string, number>): number {
+  return mergeLsbuUeByJenis(lsbuRows, map, ["001-Jumlah Kartu"]);
+}
+
+export function mergeLsbuUeByJenis(
+  lsbuRows: Row[],
+  map: Map<string, number>,
+  jenisFilters: string | string[],
+  valueCol: string = "KARTU_ELEKTRONIK",
+  divideBy = 1
+): number {
+  const list = Array.isArray(jenisFilters) ? jenisFilters : [jenisFilters];
+  let added = 0;
+  for (const row of lsbuRows) {
+    if (!kotaOk(row)) continue;
+    const jenis = (pick(row, ["JENIS_DATA"]) || "").trim();
+    if (!list.includes(jenis)) continue;
+    const id = idOf(row);
+    if (!id) continue;
+    // value: prefer explicit col, else VOLUME/NILAI/KARTU_ELEKTRONIK
+    const v =
+      num(row, [valueCol, "KARTU_ELEKTRONIK", "VOLUME_TRANSAKSI", "NILAI_TRANSAKSI"]) /
+      divideBy;
+    if (v !== 0) {
+      map.set(id, (map.get(id) || 0) + v);
+      added++;
+    }
+  }
+  return added;
+}
+
+/** UE job → JENIS_DATA codes from notebook */
+export const UE_LSBU_MAP: {
+  match: string[];
+  jenis: string[];
+  valueCol: string;
+  divideBy: number;
+}[] = [
+  { match: ["Jumlah Kartu"], jenis: ["001-Jumlah Kartu"], valueCol: "KARTU_ELEKTRONIK", divideBy: 1 },
+  { match: ["Chip Based"], jenis: ["051-Chip based"], valueCol: "KARTU_ELEKTRONIK", divideBy: 1 },
+  { match: ["Server Based"], jenis: ["052-Server based"], valueCol: "KARTU_ELEKTRONIK", divideBy: 1 },
+  { match: ["Registered"], jenis: ["056-Registered"], valueCol: "KARTU_ELEKTRONIK", divideBy: 1 },
+  { match: ["Unregistered"], jenis: ["057-Unregistered"], valueCol: "KARTU_ELEKTRONIK", divideBy: 1 },
+  { match: ["Dana Float"], jenis: ["070-Dana Float"], valueCol: "KARTU_ELEKTRONIK", divideBy: 1 },
+  {
+    match: ["Jumlah Reader"],
+    jenis: ["122-Jumlah Mesin Reader Uang Elektronik ", "122-Jumlah Mesin Reader Uang Elektronik"],
+    valueCol: "KARTU_ELEKTRONIK",
+    divideBy: 1,
+  },
+  {
+    match: ["Volume Belanja", "Volume"],
+    jenis: [
+      "086-Volume transaksi belanja internasional",
+      "087-Volume transaksi belanja domestik",
+    ],
+    valueCol: "VOLUME_TRANSAKSI",
+    divideBy: 1,
+  },
+  {
+    match: ["Nilai Belanja", "Nilai"],
+    jenis: [
+      "106-Nominal transaksi belanja internasional",
+      "107-Nominal transaksi belanja domestik",
+    ],
+    valueCol: "NILAI_TRANSAKSI",
+    divideBy: 1_000_000,
+  },
+  {
+    match: ["Vol Initial"],
+    jenis: ["096-Volume transaksi Initial (isi pertama kali)"],
+    valueCol: "VOLUME_TRANSAKSI",
+    divideBy: 1,
+  },
+  {
+    match: ["Nom Initial"],
+    jenis: ["116-Nominal transaksi Initial (isi pertama kali)"],
+    valueCol: "NILAI_TRANSAKSI",
+    divideBy: 1_000_000,
+  },
+  {
+    match: ["Vol Top Up"],
+    jenis: ["097-Volume transaksi reload/top up"],
+    valueCol: "VOLUME_TRANSAKSI",
+    divideBy: 1,
+  },
+  {
+    match: ["Nom Top Up"],
+    jenis: ["117-Nominal transaksi reload/top up"],
+    valueCol: "NILAI_TRANSAKSI",
+    divideBy: 1_000_000,
+  },
+  {
+    match: ["Vol Transfer"],
+    jenis: ["093-Volume transaksi transfer antar uang elektronik"],
+    valueCol: "VOLUME_TRANSAKSI",
+    divideBy: 1,
+  },
+  {
+    match: ["Nom Transfer"],
+    jenis: ["113-Nominal transaksi transfer antar uang elektronik"],
+    valueCol: "NILAI_TRANSAKSI",
+    divideBy: 1_000_000,
+  },
+  {
+    match: ["Vol Tunai"],
+    jenis: ["098-Volume transaksi tarik tunai uang elektronik"],
+    valueCol: "VOLUME_TRANSAKSI",
+    divideBy: 1,
+  },
+  {
+    match: ["Nom Tunai"],
+    jenis: ["118-Nominal transaksi tarik tunai uang elektronik"],
+    valueCol: "NILAI_TRANSAKSI",
+    divideBy: 1_000_000,
+  },
+  {
+    match: ["Vol Redeem"],
+    jenis: ["099-Volume transaksi reedem"],
+    valueCol: "VOLUME_TRANSAKSI",
+    divideBy: 1,
+  },
+  {
+    match: ["Nom Redeem"],
+    jenis: ["119-Nominal transaksi reedem"],
+    valueCol: "NILAI_TRANSAKSI",
+    divideBy: 1_000_000,
+  },
+];
+
 export function mergeLsbuKk(lsbuRows: Row[], map: Map<string, number>): number {
   let added = 0;
   for (const row of lsbuRows) {
-    const id = (pick(row, ["SANDI_PELAPOR", "idpelapor"]) || "")
-      .replace(/\.0$/, "")
-      .trim();
+    const id = idOf(row);
     if (!id) continue;
-    const v = Number(String(pick(row, ["JUMLAH_KARTU"]) || "0").replace(/,/g, ""));
-    if (Number.isFinite(v) && v !== 0) {
+    const v = num(row, ["JUMLAH_KARTU"]);
+    if (v !== 0) {
       map.set(id, (map.get(id) || 0) + v);
       added++;
     }
@@ -139,16 +365,13 @@ export function mergeLsbuAcquirer(
 ): number {
   let added = 0;
   for (const row of lsbuRows) {
-    const jenis = (pick(row, ["JENIS_MESIN", "jenis_mesin"]) || "").trim();
-    const kota = (pick(row, ["KOTA", "kota"]) || "").trim();
-    if (kota !== "-" && kota !== "") continue;
+    if (!kotaOk(row)) continue;
+    const jenis = (pick(row, ["JENIS_MESIN"]) || "").trim();
     if (jenis !== targetJenis && !jenis.includes(targetJenis)) continue;
-    const id = (pick(row, ["SANDI_PELAPOR", "idpelapor"]) || "")
-      .replace(/\.0$/, "")
-      .trim();
+    const id = idOf(row);
     if (!id) continue;
-    const v = Number(String(pick(row, [valueField]) || "0").replace(/,/g, ""));
-    if (Number.isFinite(v) && v !== 0) {
+    const v = num(row, [valueField]);
+    if (v !== 0) {
       map.set(id, (map.get(id) || 0) + v);
       added++;
     }
@@ -163,10 +386,62 @@ export const ACQUIRER_LSBU_JENIS: { hints: string[]; jenis: string }[] = [
   { hints: ["gabungan"], jenis: "09-Point Of Sale Gabungan" },
 ];
 
-/**
- * Fraud FORMA0306 per bank — group by SANDI_PELAPOR + JENIS_KARTU
- * valueField: VOLUME_FRAUD_ACTUAL | NOMINAL_FRAUD_ACTUAL
- */
+/** FORMA0303 interchange */
+export function mergeLsbuForma0303(
+  lsbuRows: Row[],
+  map: Map<string, number>,
+  transaksi: string,
+  valueField: "VOLUME_TRANSAKSI" | "NILAI_TRANSAKSI",
+  divideBy = 1
+): number {
+  let added = 0;
+  for (const row of lsbuRows) {
+    const trx = (pick(row, ["TRANSAKSI"]) || "").trim();
+    if (trx !== transaksi && !trx.includes(transaksi.split("-")[0] || "___")) continue;
+    if (trx !== transaksi) continue;
+    const id = idOf(row);
+    if (!id) continue;
+    const v = num(row, [valueField]) / divideBy;
+    if (v !== 0) {
+      map.set(id, (map.get(id) || 0) + v);
+      added++;
+    }
+  }
+  return added;
+}
+
+export const ACQUIRER_0303_MAP: {
+  match: string[];
+  transaksi: string;
+  field: "VOLUME_TRANSAKSI" | "NILAI_TRANSAKSI";
+  divideBy: number;
+}[] = [
+  {
+    match: ["Vol Internasional"],
+    transaksi: "51-Internasional (interchange)",
+    field: "VOLUME_TRANSAKSI",
+    divideBy: 1,
+  },
+  {
+    match: ["Nom Internasional"],
+    transaksi: "51-Internasional (interchange)",
+    field: "NILAI_TRANSAKSI",
+    divideBy: 1_000_000,
+  },
+  {
+    match: ["Vol Off Us"],
+    transaksi: "52-Domestik (interchange)",
+    field: "VOLUME_TRANSAKSI",
+    divideBy: 1,
+  },
+  {
+    match: ["Nom Off Us"],
+    transaksi: "52-Domestik (interchange)",
+    field: "NILAI_TRANSAKSI",
+    divideBy: 1_000_000,
+  },
+];
+
 export function mergeLsbuFraudBank(
   lsbuRows: Row[],
   map: Map<string, number>,
@@ -176,22 +451,62 @@ export function mergeLsbuFraudBank(
 ): number {
   let added = 0;
   for (const row of lsbuRows) {
-    const jk = (pick(row, ["JENIS_KARTU", "jenis_kartu"]) || "").trim();
-    if (jk !== jenisKartu && !jk.includes(jenisKartu.split("-")[0] || "___")) {
-      // soft match: e.g. contains "Kredit" / "Elektronik"
+    const jk = (pick(row, ["JENIS_KARTU"]) || "").trim();
+    if (jk !== jenisKartu) {
       const key = jenisKartu.toLowerCase();
-      if (!jk.toLowerCase().includes(key.includes("kredit") ? "kredit" : key.includes("elektronik") ? "elektronik" : key.includes("atm") || key.includes("debet") ? "atm" : "___")) {
+      if (
+        !jk
+          .toLowerCase()
+          .includes(
+            key.includes("kredit")
+              ? "kredit"
+              : key.includes("elektronik")
+                ? "elektronik"
+                : key.includes("atm") || key.includes("debet")
+                  ? "atm"
+                  : "___"
+          )
+      )
         continue;
-      }
     }
-    const id = (pick(row, ["SANDI_PELAPOR", "idpelapor"]) || "")
-      .replace(/\.0$/, "")
-      .trim();
+    const id = idOf(row);
     if (!id) continue;
-    const v =
-      Number(String(pick(row, [valueField]) || "0").replace(/,/g, "")) / divideBy;
-    if (Number.isFinite(v) && v !== 0) {
+    const v = num(row, [valueField]) / divideBy;
+    if (v !== 0) {
       map.set(id, (map.get(id) || 0) + v);
+      added++;
+    }
+  }
+  return added;
+}
+
+/** Fraud penyebab: JENIS_FRAUD → CP/PL/HD/TD/FA/X */
+export const FRAUD_PENYEBAB_MAP: Record<string, string> = {
+  "50-Transaksi tanpa menggunakan kartu/Card not present": "CP",
+  "10-Kartu palsu": "PL",
+  "20-Kartu yang hilang dan atau dicuri": "HD",
+  "30-Kartu tidak diterima pemegang kartu": "TD",
+  "40-Fraud Aplikasi": "FA",
+  "99-Lainnya": "X",
+};
+
+export function mergeLsbuFraudPenyebab(
+  lsbuRows: Row[],
+  map: Map<string, number>,
+  jenisKartu: string,
+  valueField: "VOLUME_FRAUD_ACTUAL" | "NOMINAL_FRAUD_ACTUAL",
+  divideBy: number
+): number {
+  let added = 0;
+  for (const row of lsbuRows) {
+    const jk = (pick(row, ["JENIS_KARTU"]) || "").trim();
+    if (jk !== jenisKartu) continue;
+    const jf = (pick(row, ["JENIS_FRAUD"]) || "").trim();
+    const code = FRAUD_PENYEBAB_MAP[jf];
+    if (!code) continue;
+    const v = num(row, [valueField]) / divideBy;
+    if (v !== 0) {
+      map.set(code, (map.get(code) || 0) + v);
       added++;
     }
   }
