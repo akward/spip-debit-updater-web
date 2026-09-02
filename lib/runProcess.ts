@@ -88,7 +88,13 @@ async function processOneJob(opts: {
 
   if (file) {
     source = "csv";
-    map = buildValueMap(file.rows, job.valueColumn, job.divideBy, job.keyColumn);
+    map = buildValueMap(
+      file.rows,
+      job.valueColumn,
+      job.divideBy,
+      job.keyColumn,
+      job.filterJenis
+    );
   }
 
   if (group === "debit") {
@@ -286,6 +292,7 @@ async function processOneJob(opts: {
       ids: map.size,
       monthLabel,
       source,
+      filterJenis: job.filterJenis || null,
       sample: [...map.entries()].slice(0, 3),
     });
     return outRows;
