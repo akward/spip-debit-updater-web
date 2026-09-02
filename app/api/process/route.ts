@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { previousMonthLabel } from "@/lib/months";
-import { parseCsvText, buildValueMap, matchFile, type Row } from "@/lib/parse";
+import {
+  parseCsvText,
+  buildValueMap,
+  matchFile,
+  findBestFile,
+  type Row,
+} from "@/lib/parse";
 import { updateMonthColumn } from "@/lib/sheets";
 import { updateMesinAtmMatrix, updateEdcMatrix } from "@/lib/matrix";
 import { GROUPS } from "@/lib/tasks";
@@ -26,6 +32,45 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+function basename(name: string): string {
+  return name.toLowerCase().replace(/\\/g, "/").split("/").pop() || "";
+}
+
+/** Pilih CSV untuk job UE transfer agar tidak saling tabrak */
+function pickUeTransferFile(
+  parsed: { name: string; rows: Row[] }[],
+  jobName: string
+): { name: string; rows: Row[] } | undefined {
+  const n = jobName.toLowerCase();
+  if (n.includes("pemerintah")) {
+    return parsed.find((p) => {
+      const b = basename(p.name);
+      return b.includes("pemerintah") || b.includes("transfer_pem");
+    });
+  }
+  if (n.includes("rek")) {
+    return parsed.find((p) => {
+      const b = basename(p.name);
+      return (
+        b.includes("rekening") ||
+        b.includes("transfer_rek") ||
+        (b.includes("rek") && b.includes("transfer"))
+      );
+    });
+  }
+  // Vol/Nom Transfer (antar UE) — ada "transfer" tapi BUKAN rekening/pemerintah
+  if (n === "vol transfer" || n === "nom transfer") {
+    return parsed.find((p) => {
+      const b = basename(p.name);
+      if (!b.includes("transfer")) return false;
+      if (b.includes("rekening") || b.includes("transfer_rek")) return false;
+      if (b.includes("pemerintah") || b.includes("transfer_pem")) return false;
+      return true;
+    });
+  }
+  return undefined;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
@@ -45,17 +90,12 @@ export async function POST(req: NextRequest) {
 
     const files = form.getAll("files").filter((f) => f instanceof File) as File[];
 
-    // Multi LSBU (e.g. Acquirer 0304 + 0303)
     const lsbuFiles = [
       ...form.getAll("lsbu"),
       ...form.getAll("lsbu2"),
     ].filter((f) => f instanceof File && f.size > 0) as File[];
 
-    const lsbuBundles: {
-      name: string;
-      kind: LsbuKind;
-      rows: Row[];
-    }[] = [];
+    const lsbuBundles: { name: string; kind: LsbuKind; rows: Row[] }[] = [];
     for (const f of lsbuFiles) {
       const buf = await f.arrayBuffer();
       const rows = parseLsbuXlsx(buf);
@@ -74,7 +114,13 @@ export async function POST(req: NextRequest) {
 
     for (const job of jobs) {
       try {
-        const file = parsed.find((p) => matchFile(p.name, job.fileHints));
+        let file =
+          group === "ue" &&
+          (job.name.includes("Transfer") || job.name.includes("transfer"))
+            ? pickUeTransferFile(parsed, job.name) ||
+              findBestFile(parsed, job.fileHints)
+            : findBestFile(parsed, job.fileHints);
+
         let map = new Map<string, number>();
         let source: "csv" | "none" = "none";
         let matrixRows: Row[] | null = file ? file.rows : null;
@@ -89,14 +135,13 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        // ========== LSBU merges (notebook parity) ==========
+        // ========== LSBU merges ==========
 
-        // Debit FORMA0302 — kartu
         if (group === "debit") {
           const r0302 = lsbuByKind("forma0302");
           if (r0302.length) {
             if (job.valueColumn === "jumlah") {
-              if (job.name.includes("ATM+Debet") || job.name.includes("ATM+Debet")) {
+              if (job.name.includes("ATM+Debet")) {
                 const m = mergeLsbuDebit(r0302, { kartuDebit: map });
                 if (m.addedDebit)
                   results.push({
@@ -115,9 +160,8 @@ export async function POST(req: NextRequest) {
               }
             }
 
-            // Debit transaksi
             for (const rule of DEBIT_TRX_LSBU) {
-              if (rule.match.some((m) => job.name === m || job.name.includes(m))) {
+              if (rule.match.some((m) => job.name === m)) {
                 const n = mergeLsbuDebitTrx(
                   r0302,
                   map,
@@ -134,7 +178,6 @@ export async function POST(req: NextRequest) {
               }
             }
 
-            // Mesin ATM 121 → gabung ke matrix rows
             if (job.kind === "matrix-atm") {
               const extra = lsbuMesinAtmRows(r0302);
               if (extra.length) {
@@ -149,39 +192,30 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // UE FORMA0302 — full JENIS_DATA map
+        // UE — hanya exact job name (hindari "Vol Transfer" menempel ke "Vol Transfer Rek")
         if (group === "ue") {
           const r0302 = lsbuByKind("forma0302");
           if (r0302.length) {
             for (const rule of UE_LSBU_MAP) {
-              // exact job name match first, avoid "Volume" matching everything
-              const hit = rule.match.some((m) => job.name === m);
-              const hitLoose =
-                !hit &&
-                rule.match.some(
-                  (m) => m.length > 6 && job.name.includes(m)
-                );
-              if (hit || hitLoose) {
-                const n = mergeLsbuUeByJenis(
-                  r0302,
-                  map,
-                  rule.jenis,
-                  rule.valueCol,
-                  rule.divideBy
-                );
-                if (n)
-                  results.push({
-                    job: `${job.name} [LSBU 0302]`,
-                    status: "info",
-                    reason: `+${n} ${rule.jenis[0]}`,
-                  });
-                break;
-              }
+              if (!rule.match.some((m) => job.name === m)) continue;
+              const n = mergeLsbuUeByJenis(
+                r0302,
+                map,
+                rule.jenis,
+                rule.valueCol,
+                rule.divideBy
+              );
+              if (n)
+                results.push({
+                  job: `${job.name} [LSBU 0302]`,
+                  status: "info",
+                  reason: `+${n} ${rule.jenis[0]}`,
+                });
+              break;
             }
           }
         }
 
-        // KK FORMA0301
         if (group === "kk" && job.name.includes("Jumlah Kartu")) {
           const r = lsbuByKind("forma0301");
           if (r.length) {
@@ -195,45 +229,39 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Acquirer FORMA0304 EDC
         if (group === "acquirer") {
           const r0304 = lsbuByKind("forma0304");
           if (r0304.length && file) {
             for (const rule of ACQUIRER_LSBU_JENIS) {
-              if (matchFile(file.name, rule.hints) || job.name.includes("EDC")) {
-                if (
-                  (rule.hints.includes("debet") && job.name.includes("Debet")) ||
-                  (rule.hints.includes("kredit") && job.name.includes("Kredit")) ||
-                  (rule.hints.includes("ue") && job.name === "EDC UE") ||
-                  (rule.hints.includes("gabungan") && job.name.includes("Gabungan"))
-                ) {
-                  // matrix uses rows; also keep map for info
-                  const tmp = new Map<string, number>();
-                  const n = mergeLsbuAcquirer(r0304, rule.jenis, tmp, "JUMLAH_MESIN");
-                  if (n) {
-                    // inject as Open Loop rows
-                    const extra: Row[] = [...tmp.entries()].map(([id, v]) => ({
-                      idpelapor: id,
-                      statusmesin: "OL",
-                      expr_1: String(v),
-                    }));
-                    matrixRows = [...(matrixRows || []), ...extra];
-                    results.push({
-                      job: `${job.name} [LSBU 0304]`,
-                      status: "info",
-                      reason: `+${n} ${rule.jenis}`,
-                    });
-                  }
+              if (
+                (rule.hints.includes("debet") && job.name.includes("Debet")) ||
+                (rule.hints.includes("kredit") && job.name.includes("Kredit")) ||
+                (rule.hints.includes("ue") && job.name === "EDC UE") ||
+                (rule.hints.includes("gabungan") && job.name.includes("Gabungan"))
+              ) {
+                const tmp = new Map<string, number>();
+                const n = mergeLsbuAcquirer(r0304, rule.jenis, tmp, "JUMLAH_MESIN");
+                if (n) {
+                  const extra: Row[] = [...tmp.entries()].map(([id, v]) => ({
+                    idpelapor: id,
+                    statusmesin: "OL",
+                    expr_1: String(v),
+                  }));
+                  matrixRows = [...(matrixRows || []), ...extra];
+                  results.push({
+                    job: `${job.name} [LSBU 0304]`,
+                    status: "info",
+                    reason: `+${n} ${rule.jenis}`,
+                  });
                 }
               }
             }
           }
 
-          // FORMA0303 interchange
           const r0303 = lsbuByKind("forma0303");
           if (r0303.length) {
             for (const rule of ACQUIRER_0303_MAP) {
-              if (rule.match.some((m) => job.name === m || job.name.includes(m))) {
+              if (rule.match.some((m) => job.name === m)) {
                 const n = mergeLsbuForma0303(
                   r0303,
                   map,
@@ -252,7 +280,6 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Fraud bank FORMA0306
         if (group === "fraud_bank") {
           const r = lsbuByKind("forma0306");
           if (r.length) {
@@ -279,7 +306,6 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Fraud penyebab FORMA0306 → CP/PL/HD/TD/FA/X
         if (group === "fraud_penyebab") {
           const r = lsbuByKind("forma0306");
           if (r.length) {
@@ -321,7 +347,8 @@ export async function POST(req: NextRequest) {
         if (dryRun) {
           results.push({
             job: job.name,
-            status: source === "none" && !map.size ? "dry-run-copy-previous" : "dry-run",
+            status:
+              source === "none" && !map.size ? "dry-run-copy-previous" : "dry-run",
             sheet: job.sheetName,
             kind: job.kind || "column",
             file: file?.name || null,
