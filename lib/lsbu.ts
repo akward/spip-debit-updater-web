@@ -145,54 +145,14 @@ export const DEBIT_TRX_LSBU: {
   valueCol: string;
   divideBy: number;
 }[] = [
-  {
-    match: ["Volume Transaksi Tunai"],
-    jenis: ["082-Volume transaksi tarik tunai domestik"],
-    valueCol: "VOLUME_TRANSAKSI",
-    divideBy: 1,
-  },
-  {
-    match: ["Nominal Transaksi Tunai"],
-    jenis: ["102-Nominal transaksi tarik tunai domestik"],
-    valueCol: "NILAI_TRANSAKSI",
-    divideBy: 1_000_000,
-  },
-  {
-    match: ["Volume Transaksi Belanja"],
-    jenis: ["087-Volume transaksi belanja domestik"],
-    valueCol: "VOLUME_TRANSAKSI",
-    divideBy: 1,
-  },
-  {
-    match: ["Nominal Transaksi Belanja"],
-    jenis: ["107-Nominal transaksi belanja domestik"],
-    valueCol: "NILAI_TRANSAKSI",
-    divideBy: 1_000_000,
-  },
-  {
-    match: ["Volume Transaksi Transfer"],
-    jenis: ["091-Volume transaksi transfer interbank"],
-    valueCol: "VOLUME_TRANSAKSI",
-    divideBy: 1,
-  },
-  {
-    match: ["Nominal Transaksi Transfer"],
-    jenis: ["111-Nominal transaksi transfer interbank"],
-    valueCol: "NILAI_TRANSAKSI",
-    divideBy: 1_000_000,
-  },
-  {
-    match: ["Volume Transaksi Transfer (2)"],
-    jenis: ["092-Volume transaksi transfer antarbank"],
-    valueCol: "VOLUME_TRANSAKSI",
-    divideBy: 1,
-  },
-  {
-    match: ["Nominal Transaksi Transfer (2)"],
-    jenis: ["112-Nominal transaksi transfer antarbank"],
-    valueCol: "NILAI_TRANSAKSI",
-    divideBy: 1_000_000,
-  },
+  { match: ["Volume Transaksi Tunai"], jenis: ["082-Volume transaksi tarik tunai domestik"], valueCol: "VOLUME_TRANSAKSI", divideBy: 1 },
+  { match: ["Nominal Transaksi Tunai"], jenis: ["102-Nominal transaksi tarik tunai domestik"], valueCol: "NILAI_TRANSAKSI", divideBy: 1_000_000 },
+  { match: ["Volume Transaksi Belanja"], jenis: ["087-Volume transaksi belanja domestik"], valueCol: "VOLUME_TRANSAKSI", divideBy: 1 },
+  { match: ["Nominal Transaksi Belanja"], jenis: ["107-Nominal transaksi belanja domestik"], valueCol: "NILAI_TRANSAKSI", divideBy: 1_000_000 },
+  { match: ["Volume Transaksi Transfer"], jenis: ["091-Volume transaksi transfer interbank"], valueCol: "VOLUME_TRANSAKSI", divideBy: 1 },
+  { match: ["Nominal Transaksi Transfer"], jenis: ["111-Nominal transaksi transfer interbank"], valueCol: "NILAI_TRANSAKSI", divideBy: 1_000_000 },
+  { match: ["Volume Transaksi Transfer (2)"], jenis: ["092-Volume transaksi transfer antarbank"], valueCol: "VOLUME_TRANSAKSI", divideBy: 1 },
+  { match: ["Nominal Transaksi Transfer (2)"], jenis: ["112-Nominal transaksi transfer antarbank"], valueCol: "NILAI_TRANSAKSI", divideBy: 1_000_000 },
 ];
 
 export function mergeLsbuUe(lsbuRows: Row[], map: Map<string, number>): number {
@@ -245,82 +205,26 @@ export const UE_LSBU_MAP: {
   },
   {
     match: ["Volume Belanja", "Volume"],
-    jenis: [
-      "086-Volume transaksi belanja internasional",
-      "087-Volume transaksi belanja domestik",
-    ],
+    jenis: ["086-Volume transaksi belanja internasional", "087-Volume transaksi belanja domestik"],
     valueCol: "VOLUME_TRANSAKSI",
     divideBy: 1,
   },
   {
     match: ["Nilai Belanja", "Nilai"],
-    jenis: [
-      "106-Nominal transaksi belanja internasional",
-      "107-Nominal transaksi belanja domestik",
-    ],
+    jenis: ["106-Nominal transaksi belanja internasional", "107-Nominal transaksi belanja domestik"],
     valueCol: "NILAI_TRANSAKSI",
     divideBy: 1_000_000,
   },
-  {
-    match: ["Vol Initial"],
-    jenis: ["096-Volume transaksi Initial (isi pertama kali)"],
-    valueCol: "VOLUME_TRANSAKSI",
-    divideBy: 1,
-  },
-  {
-    match: ["Nom Initial"],
-    jenis: ["116-Nominal transaksi Initial (isi pertama kali)"],
-    valueCol: "NILAI_TRANSAKSI",
-    divideBy: 1_000_000,
-  },
-  {
-    match: ["Vol Top Up"],
-    jenis: ["097-Volume transaksi reload/top up"],
-    valueCol: "VOLUME_TRANSAKSI",
-    divideBy: 1,
-  },
-  {
-    match: ["Nom Top Up"],
-    jenis: ["117-Nominal transaksi reload/top up"],
-    valueCol: "NILAI_TRANSAKSI",
-    divideBy: 1_000_000,
-  },
-  {
-    match: ["Vol Transfer"],
-    jenis: ["093-Volume transaksi transfer antar uang elektronik"],
-    valueCol: "VOLUME_TRANSAKSI",
-    divideBy: 1,
-  },
-  {
-    match: ["Nom Transfer"],
-    jenis: ["113-Nominal transaksi transfer antar uang elektronik"],
-    valueCol: "NILAI_TRANSAKSI",
-    divideBy: 1_000_000,
-  },
-  {
-    match: ["Vol Tunai"],
-    jenis: ["098-Volume transaksi tarik tunai uang elektronik"],
-    valueCol: "VOLUME_TRANSAKSI",
-    divideBy: 1,
-  },
-  {
-    match: ["Nom Tunai"],
-    jenis: ["118-Nominal transaksi tarik tunai uang elektronik"],
-    valueCol: "NILAI_TRANSAKSI",
-    divideBy: 1_000_000,
-  },
-  {
-    match: ["Vol Redeem"],
-    jenis: ["099-Volume transaksi reedem"],
-    valueCol: "VOLUME_TRANSAKSI",
-    divideBy: 1,
-  },
-  {
-    match: ["Nom Redeem"],
-    jenis: ["119-Nominal transaksi reedem"],
-    valueCol: "NILAI_TRANSAKSI",
-    divideBy: 1_000_000,
-  },
+  { match: ["Vol Initial"], jenis: ["096-Volume transaksi Initial (isi pertama kali)"], valueCol: "VOLUME_TRANSAKSI", divideBy: 1 },
+  { match: ["Nom Initial"], jenis: ["116-Nominal transaksi Initial (isi pertama kali)"], valueCol: "NILAI_TRANSAKSI", divideBy: 1_000_000 },
+  { match: ["Vol Top Up"], jenis: ["097-Volume transaksi reload/top up"], valueCol: "VOLUME_TRANSAKSI", divideBy: 1 },
+  { match: ["Nom Top Up"], jenis: ["117-Nominal transaksi reload/top up"], valueCol: "NILAI_TRANSAKSI", divideBy: 1_000_000 },
+  { match: ["Vol Transfer"], jenis: ["093-Volume transaksi transfer antar uang elektronik"], valueCol: "VOLUME_TRANSAKSI", divideBy: 1 },
+  { match: ["Nom Transfer"], jenis: ["113-Nominal transaksi transfer antar uang elektronik"], valueCol: "NILAI_TRANSAKSI", divideBy: 1_000_000 },
+  { match: ["Vol Tunai"], jenis: ["098-Volume transaksi tarik tunai uang elektronik"], valueCol: "VOLUME_TRANSAKSI", divideBy: 1 },
+  { match: ["Nom Tunai"], jenis: ["118-Nominal transaksi tarik tunai uang elektronik"], valueCol: "NILAI_TRANSAKSI", divideBy: 1_000_000 },
+  { match: ["Vol Redeem"], jenis: ["099-Volume transaksi reedem"], valueCol: "VOLUME_TRANSAKSI", divideBy: 1 },
+  { match: ["Nom Redeem"], jenis: ["119-Nominal transaksi reedem"], valueCol: "NILAI_TRANSAKSI", divideBy: 1_000_000 },
 ];
 
 export function mergeLsbuKk(lsbuRows: Row[], map: Map<string, number>): number {
@@ -329,6 +233,81 @@ export function mergeLsbuKk(lsbuRows: Row[], map: Map<string, number>): number {
     const id = idOf(row);
     if (!id) continue;
     const v = num(row, ["JUMLAH_KARTU"]);
+    if (v !== 0) {
+      map.set(id, (map.get(id) || 0) + v);
+      added++;
+    }
+  }
+  return added;
+}
+
+/** KK FORMA0301 — JUMLAH_ACCOUNT */
+export function mergeLsbuKkAccount(lsbuRows: Row[], map: Map<string, number>): number {
+  let added = 0;
+  for (const row of lsbuRows) {
+    const id = idOf(row);
+    if (!id) continue;
+    const v = num(row, ["JUMLAH_ACCOUNT"]);
+    if (v !== 0) {
+      map.set(id, (map.get(id) || 0) + v);
+      added++;
+    }
+  }
+  return added;
+}
+
+const KK_OUTSTANDING_COLS = [
+  "CURRENT_NOMINAL_OUTSTANDING",
+  "X_DAY_NOMINAL_OUTSTANDING",
+  "NOMINAL_OUTSTANDING_30_DPD",
+  "NOMINAL_OUTSTANDING_60_DPD",
+  "NOMINAL_OUTSTANDING_90_DPD",
+  "NOMINAL_OUTSTANDING_120_DPD",
+  "NOMINAL_OUTSTANDING_150_DPD",
+  "NOMINAL_OUTSTANDING_180_DPD",
+];
+
+/** KK FORMA0301 — sum outstanding (notebook), ÷ divideBy */
+export function mergeLsbuKkOutstanding(
+  lsbuRows: Row[],
+  map: Map<string, number>,
+  divideBy = 1_000_000
+): number {
+  let added = 0;
+  for (const row of lsbuRows) {
+    const id = idOf(row);
+    if (!id) continue;
+    let sum = 0;
+    for (const c of KK_OUTSTANDING_COLS) sum += num(row, [c]);
+    const v = sum / divideBy;
+    if (v !== 0) {
+      map.set(id, (map.get(id) || 0) + v);
+      added++;
+    }
+  }
+  return added;
+}
+
+const KK_NPL_COLS = [
+  "NOMINAL_OUTSTANDING_90_DPD",
+  "NOMINAL_OUTSTANDING_120_DPD",
+  "NOMINAL_OUTSTANDING_150_DPD",
+  "NOMINAL_OUTSTANDING_180_DPD",
+];
+
+/** KK FORMA0301 — NPL = sum 90–180 DPD (notebook), ÷ divideBy */
+export function mergeLsbuKkNpl(
+  lsbuRows: Row[],
+  map: Map<string, number>,
+  divideBy = 1_000_000
+): number {
+  let added = 0;
+  for (const row of lsbuRows) {
+    const id = idOf(row);
+    if (!id) continue;
+    let sum = 0;
+    for (const c of KK_NPL_COLS) sum += num(row, [c]);
+    const v = sum / divideBy;
     if (v !== 0) {
       map.set(id, (map.get(id) || 0) + v);
       added++;
@@ -394,30 +373,10 @@ export const ACQUIRER_0303_MAP: {
   field: "VOLUME_TRANSAKSI" | "NILAI_TRANSAKSI";
   divideBy: number;
 }[] = [
-  {
-    match: ["Vol Internasional"],
-    transaksi: "51-Internasional (interchange)",
-    field: "VOLUME_TRANSAKSI",
-    divideBy: 1,
-  },
-  {
-    match: ["Nom Internasional"],
-    transaksi: "51-Internasional (interchange)",
-    field: "NILAI_TRANSAKSI",
-    divideBy: 1_000_000,
-  },
-  {
-    match: ["Vol Off Us"],
-    transaksi: "52-Domestik (interchange)",
-    field: "VOLUME_TRANSAKSI",
-    divideBy: 1,
-  },
-  {
-    match: ["Nom Off Us"],
-    transaksi: "52-Domestik (interchange)",
-    field: "NILAI_TRANSAKSI",
-    divideBy: 1_000_000,
-  },
+  { match: ["Vol Internasional"], transaksi: "51-Internasional (interchange)", field: "VOLUME_TRANSAKSI", divideBy: 1 },
+  { match: ["Nom Internasional"], transaksi: "51-Internasional (interchange)", field: "NILAI_TRANSAKSI", divideBy: 1_000_000 },
+  { match: ["Vol Off Us"], transaksi: "52-Domestik (interchange)", field: "VOLUME_TRANSAKSI", divideBy: 1 },
+  { match: ["Nom Off Us"], transaksi: "52-Domestik (interchange)", field: "NILAI_TRANSAKSI", divideBy: 1_000_000 },
 ];
 
 export function mergeLsbuFraudBank(
