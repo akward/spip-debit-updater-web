@@ -51,7 +51,7 @@ export const UE_JOBS: SheetJob[] = [
   { name: "Jumlah Kartu", sheetName: "Jumlah Kartu", fileHints: ["jumlah_ue", "jumlahue"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
   { name: "Chip Based", sheetName: "Chip Based", fileHints: ["chip_base", "chipbased"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
   { name: "Server Based", sheetName: "Server Based", fileHints: ["server_base", "serverbased"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
-  { name: "Registered", sheetName: "Registered", fileHints: ["registered"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
+  { name: "Registered", sheetName: "Registered", fileHints: ["unregistered".replace("un","")], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
   { name: "Unregistered", sheetName: "Unregistered", fileHints: ["unregistered"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
   { name: "Dana Float", sheetName: "Dana Float", fileHints: ["dana_float", "danafloat"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
   { name: "Jumlah Reader", sheetName: "Jumlah Reader", fileHints: ["jumlah_reader"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: U },
@@ -119,7 +119,6 @@ export const UE_JOBS: SheetJob[] = [
   { name: "Nom Reversal", sheetName: "Nom Reversal", fileHints: ["reversal"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: U },
 ];
 
-/** KK — 12 sheet sesuai notebook; Belanja=BL, Bill Payment=BY dari file yang sama */
 export const KK_JOBS: SheetJob[] = [
   { name: "Jumlah Kartu", sheetName: "Jumlah Kartu", fileHints: ["jumlah_kartu_kredit", "jumlah_kartu"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: K },
   { name: "Jumlah Account", sheetName: "Jumlah Account", fileHints: ["jumlah_account", "account"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: K },
@@ -171,7 +170,7 @@ export const ACQUIRER_JOBS: SheetJob[] = [
   {
     name: "EDC Debet",
     sheetName: "EDC Debet",
-    fileHints: ["debet", "debit"],
+    fileHints: ["debet", "debit", "edc_debet", "edc_debit"],
     valueColumn: "expr_1",
     divideBy: 1,
     spreadsheetEnv: AT,
@@ -180,7 +179,7 @@ export const ACQUIRER_JOBS: SheetJob[] = [
   {
     name: "EDC Kredit",
     sheetName: "EDC Kredit",
-    fileHints: ["kredit"],
+    fileHints: ["kredit", "edc_kredit"],
     valueColumn: "expr_1",
     divideBy: 1,
     spreadsheetEnv: AT,
@@ -188,8 +187,8 @@ export const ACQUIRER_JOBS: SheetJob[] = [
   },
   {
     name: "EDC UE",
-    sheetName: "EDC UE",
-    fileHints: ["ue.xlsx", "uang_elektronik", "_ue"],
+    sheetName: "EDC Uang Elektronik",
+    fileHints: ["ue.xlsx", "uang_elektronik", "_ue", "edc_ue"],
     valueColumn: "expr_1",
     divideBy: 1,
     spreadsheetEnv: AT,
@@ -198,7 +197,7 @@ export const ACQUIRER_JOBS: SheetJob[] = [
   {
     name: "EDC Gabungan",
     sheetName: "EDC Gabungan",
-    fileHints: ["gabungan"],
+    fileHints: ["gabungan", "edc_gabungan"],
     valueColumn: "expr_1",
     divideBy: 1,
     spreadsheetEnv: AT,
