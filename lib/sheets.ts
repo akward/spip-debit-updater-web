@@ -1,5 +1,6 @@
 import { google } from "googleapis";
 import { isMonthHeader, monthBefore } from "./months";
+import { normalizeId, lookupId } from "./parse";
 
 export type Creds = {
   client_email: string;
@@ -52,7 +53,6 @@ async function sleep(ms: number) {
   await new Promise((r) => setTimeout(r, ms));
 }
 
-/** Retry on 429 / transient errors */
 async function withRetry<T>(fn: () => Promise<T>, tries = 5): Promise<T> {
   let last: unknown;
   for (let i = 0; i < tries; i++) {
@@ -76,7 +76,6 @@ export async function updateMonthColumn(opts: {
   headerRow?: number;
   dataStartRow?: number;
   keyHeader?: string;
-  /** Jika true dan map kosong → copy kolom bulan sebelumnya */
   copyIfEmpty?: boolean;
 }): Promise<{
   written: number;
@@ -139,10 +138,7 @@ export async function updateMonthColumn(opts: {
 
   const keyIdx = headers.indexOf(keyHeader);
   if (keyIdx === -1) {
-    // fraud penyebab kadang key di kolom A tanpa header "No" yang persis
-    if (headers[0] === "No" || headers[0] === "") {
-      // ok use 0
-    } else {
+    if (!(headers[0] === "No" || headers[0] === "")) {
       throw new Error(`Kolom '${keyHeader}' tidak ada di header sheet ${sheetName}`);
     }
   }
@@ -151,7 +147,6 @@ export async function updateMonthColumn(opts: {
   const dataRows = rows.slice(dataStartRow - 1);
   const nRows = dataRows.length;
 
-  // ---- no source data → copy previous month (CLI parity) ----
   const hasAny = [...valuesById.values()].some((v) => v !== 0);
   if (copyIfEmpty && (!valuesById.size || !hasAny)) {
     const prev =
@@ -184,7 +179,6 @@ export async function updateMonthColumn(opts: {
         copiedFrom: prev,
       };
     }
-    // zeros
     const zeros = Array.from({ length: nRows }, () => [0]);
     if (zeros.length) {
       await withRetry(() =>
@@ -204,7 +198,7 @@ export async function updateMonthColumn(opts: {
     };
   }
 
-  // ---- write values ----
+  // ---- write values (No di sheet dipad ke 9 digit untuk match CSV) ----
   const colValues: (string | number)[][] = [];
   let written = 0;
   for (let i = 0; i < dataRows.length; i++) {
@@ -214,16 +208,12 @@ export async function updateMonthColumn(opts: {
       colValues.push([0]);
       continue;
     }
-    const key = String(rawKey).replace(/\.0$/, "").trim();
+    const key = normalizeId(rawKey);
     if (key === "Total") {
       colValues.push([0]);
       continue;
     }
-    const val = valuesById.has(key)
-      ? valuesById.get(key)!
-      : valuesById.has(String(Number(key)))
-        ? valuesById.get(String(Number(key)))!
-        : 0;
+    const val = lookupId(valuesById, key);
     colValues.push([val]);
     written++;
   }
@@ -241,17 +231,19 @@ export async function updateMonthColumn(opts: {
 
   const existing = new Set(
     dataRows
-      .map((r) => String(r?.[kIdx] ?? "").replace(/\.0$/, "").trim())
+      .map((r) => normalizeId(r?.[kIdx] ?? ""))
       .filter(Boolean)
   );
   const toAppend: (string | number)[][] = [];
   for (const [id, val] of valuesById.entries()) {
     if (val <= 0) continue;
-    if (existing.has(id) || existing.has(String(Number(id)))) continue;
+    const nid = normalizeId(id);
+    if (existing.has(nid)) continue;
+    // fraud codes remain as text; numeric ids as 9-digit string to preserve leading zeros
     const row: (string | number)[] = Array(Math.max(headers.length, colIndex + 1)).fill(
       ""
     );
-    row[kIdx] = Number.isFinite(Number(id)) ? Number(id) : id;
+    row[kIdx] = /^\d+$/.test(nid) ? nid : nid; // keep as string so Sheets keeps leading zeros
     row[colIndex] = val;
     toAppend.push(row);
   }
@@ -267,7 +259,7 @@ export async function updateMonthColumn(opts: {
     );
   }
 
-  await sleep(400); // mild throttle
+  await sleep(400);
   return {
     written,
     appended: toAppend.length,
