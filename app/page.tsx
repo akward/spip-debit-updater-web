@@ -21,7 +21,8 @@ const GROUPS = [
     id: "kk",
     title: "Kartu Kredit",
     lsbu: "LSBU_VW_FORMA0301.xlsx",
-    lsbuNote: "SANDI_PELAPOR + JUMLAH_KARTU",
+    lsbuNote:
+      "JUMLAH_KARTU · JUMLAH_ACCOUNT · Outstanding (sum CURRENT+X_DAY+30..180 DPD) · NPL (sum 90..180 DPD) ÷1e6",
   },
   {
     id: "acquirer",
@@ -81,6 +82,8 @@ export default function HomePage() {
   const [monthLabel, setMonthLabel] = useState("");
   const [dryRun, setDryRun] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [liveRows, setLiveRows] = useState<Array<Record<string, unknown>>>([]);
   const [log, setLog] = useState<ProcessResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,25 +93,79 @@ export default function HomePage() {
     e.preventDefault();
     setError(null);
     setLog(null);
+    setLiveRows([]);
+    setProgress(null);
     setLoading(true);
     try {
       const fd = new FormData();
       fd.set("group", group);
       fd.set("dryRun", dryRun ? "1" : "0");
+      fd.set("stream", dryRun ? "0" : "1");
       if (monthLabel.trim()) fd.set("monthLabel", monthLabel.trim());
       if (files?.length) Array.from(files).forEach((f) => fd.append("files", f));
       if (lsbuFiles?.length)
         Array.from(lsbuFiles).forEach((f) => fd.append("lsbu", f));
+
       const res = await fetch("/api/process", { method: "POST", body: fd });
-      const data = (await res.json()) as ProcessResponse;
-      if (!res.ok || !data.ok) setError(data.error || "Gagal memproses");
-      setLog(data);
+      const ctype = res.headers.get("content-type") || "";
+
+      // Streaming write progress
+      if (ctype.includes("text/event-stream") && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        const rows: Array<Record<string, unknown>> = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() || "";
+          for (const part of parts) {
+            const line = part
+              .split("\n")
+              .find((l) => l.startsWith("data: "));
+            if (!line) continue;
+            try {
+              const evt = JSON.parse(line.slice(6)) as Record<string, unknown>;
+              if (evt.type === "progress") {
+                setProgress(
+                  `${evt.index}/${evt.total}: ${String(evt.message || evt.job)}`
+                );
+              } else if (evt.type === "job") {
+                const { type: _t, index: _i, total: _tot, ...rest } = evt;
+                rows.push(rest);
+                setLiveRows([...rows]);
+                setProgress(
+                  `${evt.index}/${evt.total}: ${String(rest.job)} → ${String(rest.status)}`
+                );
+              } else if (evt.type === "done") {
+                setLog(evt as unknown as ProcessResponse);
+                setProgress("Selesai");
+              } else if (evt.type === "error") {
+                setError(String(evt.error || "Gagal"));
+              } else if (evt.type === "start") {
+                setProgress(`Mulai ${evt.totalJobs} job…`);
+              }
+            } catch {
+              /* ignore partial JSON */
+            }
+          }
+        }
+      } else {
+        const data = (await res.json()) as ProcessResponse;
+        if (!res.ok || !data.ok) setError(data.error || "Gagal memproses");
+        setLog(data);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
   }
+
+  const displayRows = log?.results?.length ? log.results : liveRows;
 
   return (
     <main className="container">
@@ -238,8 +295,25 @@ export default function HomePage() {
             </label>
 
             <button className="btn primary" type="submit" disabled={loading}>
-              {loading ? "Memproses…" : dryRun ? "Cek mapping" : "Update Google Sheet"}
+              {loading
+                ? dryRun
+                  ? "Memeriksa…"
+                  : "Menulis ke Google Sheet…"
+                : dryRun
+                  ? "Cek mapping"
+                  : "Update Google Sheet"}
             </button>
+
+            {loading && progress && (
+              <div className="ok" style={{ fontSize: 0.95 }}>
+                <strong>Progres:</strong> {progress}
+                <br />
+                <span style={{ color: "var(--muted)", fontSize: 0.85 }}>
+                  Write mode memang lebih lama (API Sheets per sheet + retry 429).
+                  Jangan tutup tab.
+                </span>
+              </div>
+            )}
           </div>
         </form>
       </section>
@@ -250,30 +324,25 @@ export default function HomePage() {
         </section>
       )}
 
-      {log && (
+      {(log || liveRows.length > 0) && (
         <section className="panel">
           <h2>Hasil proses</h2>
           <p style={{ color: "var(--muted)" }}>
-            Bulan: <code>{log.monthLabel}</code> {log.dryRun ? "· dry-run" : "· write"}
-            {log.summary ? (
+            {log ? (
               <>
-                {" · "}
-ok/copy: {log.summary.ok}/{log.summary.total} · error: {log.summary.errors}
+                Bulan: <code>{log.monthLabel}</code>{" "}
+                {log.dryRun ? "· dry-run" : "· write"}
+                {log.summary ? (
+                  <>
+                    {" · "}
+ok/copy: {log.summary.ok}/{log.summary.total} · error:{" "}
+                    {log.summary.errors}
+                  </>
+                ) : null}
               </>
-            ) : null}
-            {Array.isArray(log.lsbu) && log.lsbu.length ? (
-              <>
-                <br />
-                LSBU:{" "}
-                {log.lsbu.map((l, i) => (
-                  <span key={i}>
-                    {i > 0 ? ", " : ""}
-                    <code>{l.name}</code> ({l.rows}
-                    {l.kind ? `, ${l.kind}` : ""})
-                  </span>
-                ))}
-              </>
-            ) : null}
+            ) : (
+              <>Sedang berjalan… ({liveRows.length} baris hasil)</>
+            )}
           </p>
           <table>
             <thead>
@@ -284,7 +353,7 @@ ok/copy: {log.summary.ok}/{log.summary.total} · error: {log.summary.errors}
               </tr>
             </thead>
             <tbody>
-              {(log.results || []).map((r, i) => (
+              {displayRows.map((r, i) => (
                 <tr key={i}>
                   <td>{String(r.job)}</td>
                   <td>{String(r.status)}</td>
@@ -292,7 +361,9 @@ ok/copy: {log.summary.ok}/{log.summary.total} · error: {log.summary.errors}
                     <code style={{ fontSize: 12 }}>
                       {JSON.stringify(
                         Object.fromEntries(
-                          Object.entries(r).filter(([k]) => !["job", "status"].includes(k))
+                          Object.entries(r).filter(
+                            ([k]) => !["job", "status"].includes(k)
+                          )
                         )
                       )}
                     </code>
