@@ -2,6 +2,24 @@ import Papa from "papaparse";
 
 export type Row = Record<string, string>;
 
+/**
+ * Normalisasi id pelapor / kolom No:
+ * - jika numerik dan < 9 digit → pad leading zero jadi 9 digit (sesuai CSV)
+ * - kode fraud (CP, PL, …) dan non-numerik dibiarkan apa adanya
+ */
+export function normalizeId(raw: string | number | null | undefined): string {
+  if (raw === null || raw === undefined) return "";
+  let s = String(raw).replace(/\.0$/, "").trim();
+  if (!s || s === "Total") return s;
+  // pure digits only → pad to 9
+  if (/^\d+$/.test(s)) {
+    if (s.length < 9) s = s.padStart(9, "0");
+    return s;
+  }
+  // scientific / float-like "123456789.0" already stripped; mixed leave as-is
+  return s;
+}
+
 export function parseCsvText(text: string): Row[] {
   let parsed = Papa.parse<Row>(text, {
     header: true,
@@ -47,7 +65,7 @@ export function buildValueMap(
   for (const row of rows) {
     const idRaw = pick(row, keyNames);
     if (!idRaw) continue;
-    const id = String(idRaw).replace(/\.0$/, "").trim();
+    const id = normalizeId(idRaw);
     if (!id || id === "Total") continue;
 
     let valRaw: string | undefined;
@@ -77,4 +95,17 @@ export function buildValueMap(
 export function matchFile(filename: string, hints: string[]): boolean {
   const n = filename.toLowerCase().replace(/\\/g, "/").split("/").pop() || "";
   return hints.some((h) => n.includes(h.toLowerCase()));
+}
+
+/** Lookup nilai di map dengan normalisasi 9-digit */
+export function lookupId(map: Map<string, number>, rawKey: string): number {
+  const key = normalizeId(rawKey);
+  if (map.has(key)) return map.get(key)!;
+  // fallback tanpa pad / numeric strip
+  const bare = String(rawKey).replace(/\.0$/, "").trim();
+  if (map.has(bare)) return map.get(bare)!;
+  if (/^\d+$/.test(bare) && map.has(String(Number(bare)))) {
+    return map.get(String(Number(bare)))!;
+  }
+  return 0;
 }
