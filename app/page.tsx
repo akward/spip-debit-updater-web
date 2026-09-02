@@ -75,6 +75,85 @@ type ProcessResponse = {
   results?: Array<Record<string, unknown>>;
 };
 
+function handleSseEvent(
+  evt: Record<string, unknown>,
+  rows: Array<Record<string, unknown>>,
+  setProgress: (s: string) => void,
+  setLiveRows: (r: Array<Record<string, unknown>>) => void,
+  setLog: (l: ProcessResponse) => void,
+  setError: (e: string) => void
+) {
+  if (evt.type === "progress") {
+    setProgress(`${evt.index}/${evt.total}: ${String(evt.message || evt.job)}`);
+  } else if (evt.type === "job") {
+    const rest = { ...evt };
+    delete rest.type;
+    delete rest.index;
+    delete rest.total;
+    rows.push(rest);
+    setLiveRows([...rows]);
+    setProgress(
+      `${evt.index}/${evt.total}: ${String(rest.job)} → ${String(rest.status)}`
+    );
+  } else if (evt.type === "done") {
+    setLog(evt as unknown as ProcessResponse);
+    setProgress("Selesai");
+  } else if (evt.type === "error") {
+    setError(String(evt.error || "Gagal"));
+  } else if (evt.type === "start") {
+    setProgress(`Mulai ${evt.totalJobs} job…`);
+  }
+}
+
+async function consumeSse(
+  res: Response,
+  setProgress: (s: string) => void,
+  setLiveRows: (r: Array<Record<string, unknown>>) => void,
+  setLog: (l: ProcessResponse) => void,
+  setError: (e: string) => void
+) {
+  if (!res.body) throw new Error("Tidak ada body stream");
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const rows: Array<Record<string, unknown>> = [];
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() || "";
+    for (const part of parts) {
+      for (const rawLine of part.split("\n")) {
+        const line = rawLine.trim();
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const evt = JSON.parse(payload) as Record<string, unknown>;
+          handleSseEvent(evt, rows, setProgress, setLiveRows, setLog, setError);
+        } catch {
+          /* partial */
+        }
+      }
+    }
+  }
+  // sisa buffer
+  for (const rawLine of buffer.split("\n")) {
+    const line = rawLine.trim();
+    if (!line.startsWith("data:")) continue;
+    const payload = line.slice(5).trim();
+    if (!payload) continue;
+    try {
+      const evt = JSON.parse(payload) as Record<string, unknown>;
+      handleSseEvent(evt, rows, setProgress, setLiveRows, setLog, setError);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 export default function HomePage() {
   const [group, setGroup] = useState("debit");
   const [files, setFiles] = useState<FileList | null>(null);
@@ -100,63 +179,97 @@ export default function HomePage() {
       const fd = new FormData();
       fd.set("group", group);
       fd.set("dryRun", dryRun ? "1" : "0");
+      // stream only for real writes
       fd.set("stream", dryRun ? "0" : "1");
       if (monthLabel.trim()) fd.set("monthLabel", monthLabel.trim());
       if (files?.length) Array.from(files).forEach((f) => fd.append("files", f));
       if (lsbuFiles?.length)
         Array.from(lsbuFiles).forEach((f) => fd.append("lsbu", f));
 
-      const res = await fetch("/api/process", { method: "POST", body: fd });
-      const ctype = res.headers.get("content-type") || "";
+      const res = await fetch("/api/process", {
+        method: "POST",
+        body: fd,
+        headers: { Accept: "text/event-stream, application/json" },
+      });
 
-      // Streaming write progress
-      if (ctype.includes("text/event-stream") && res.body) {
+      const ctype = (res.headers.get("content-type") || "").toLowerCase();
+      const useStream =
+        !dryRun ||
+        ctype.includes("event-stream") ||
+        ctype.includes("text/event-stream");
+
+      if (useStream && res.body) {
+        // Peek: if server actually returned JSON error, handle it
+        // We still try SSE first; if first chunk is JSON object, parse as JSON
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
-        let buffer = "";
-        const rows: Array<Record<string, unknown>> = [];
+        const first = await reader.read();
+        const firstText = decoder.decode(first.value || new Uint8Array(), {
+          stream: true,
+        });
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() || "";
-          for (const part of parts) {
-            const line = part
-              .split("\n")
-              .find((l) => l.startsWith("data: "));
-            if (!line) continue;
-            try {
-              const evt = JSON.parse(line.slice(6)) as Record<string, unknown>;
-              if (evt.type === "progress") {
-                setProgress(
-                  `${evt.index}/${evt.total}: ${String(evt.message || evt.job)}`
-                );
-              } else if (evt.type === "job") {
-                const { type: _t, index: _i, total: _tot, ...rest } = evt;
-                rows.push(rest);
-                setLiveRows([...rows]);
-                setProgress(
-                  `${evt.index}/${evt.total}: ${String(rest.job)} → ${String(rest.status)}`
-                );
-              } else if (evt.type === "done") {
-                setLog(evt as unknown as ProcessResponse);
-                setProgress("Selesai");
-              } else if (evt.type === "error") {
-                setError(String(evt.error || "Gagal"));
-              } else if (evt.type === "start") {
-                setProgress(`Mulai ${evt.totalJobs} job…`);
-              }
-            } catch {
-              /* ignore partial JSON */
-            }
+        if (firstText.trimStart().startsWith("{")) {
+          // full JSON response (error or non-stream)
+          let rest = firstText;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            rest += decoder.decode(value, { stream: true });
           }
+          const data = JSON.parse(rest) as ProcessResponse;
+          if (!res.ok || data.ok === false)
+            setError(data.error || "Gagal memproses");
+          setLog(data);
+        } else {
+          // Re-feed first chunk into SSE parser via a new stream
+          const stream = new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(firstText));
+              (async () => {
+                try {
+                  while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    controller.enqueue(value);
+                  }
+                } finally {
+                  controller.close();
+                }
+              })();
+            },
+          });
+          const sseRes = new Response(stream);
+          await consumeSse(
+            sseRes,
+            setProgress,
+            setLiveRows,
+            setLog,
+            setError
+          );
         }
       } else {
-        const data = (await res.json()) as ProcessResponse;
-        if (!res.ok || !data.ok) setError(data.error || "Gagal memproses");
-        setLog(data);
+        const text = await res.text();
+        if (text.trimStart().startsWith("data:")) {
+          // misdetected as non-stream
+          const stream = new ReadableStream({
+            start(c) {
+              c.enqueue(new TextEncoder().encode(text));
+              c.close();
+            },
+          });
+          await consumeSse(
+            new Response(stream),
+            setProgress,
+            setLiveRows,
+            setLog,
+            setError
+          );
+        } else {
+          const data = JSON.parse(text) as ProcessResponse;
+          if (!res.ok || data.ok === false)
+            setError(data.error || "Gagal memproses");
+          setLog(data);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -309,8 +422,7 @@ export default function HomePage() {
                 <strong>Progres:</strong> {progress}
                 <br />
                 <span style={{ color: "var(--muted)", fontSize: 0.85 }}>
-                  Write mode memang lebih lama (API Sheets per sheet + retry 429).
-                  Jangan tutup tab.
+                  Write mode lebih lama (API Sheets per sheet). Jangan tutup tab.
                 </span>
               </div>
             )}
