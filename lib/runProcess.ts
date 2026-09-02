@@ -12,10 +12,8 @@ import { GROUPS, type SheetJob } from "@/lib/tasks";
 import {
   parseLsbuXlsx,
   mergeLsbuDebit,
-  mergeLsbuKk,
-  mergeLsbuKkAccount,
-  mergeLsbuKkOutstanding,
-  mergeLsbuKkNpl,
+  mergeLsbuKkSumCols,
+  KK_LSBU_MAP,
   mergeLsbuAcquirer,
   detectLsbuKind,
   ACQUIRER_LSBU_JENIS,
@@ -160,38 +158,16 @@ async function processOneJob(opts: {
   if (group === "kk") {
     const r = lsbuByKind("forma0301");
     if (r.length) {
-      if (job.name === "Jumlah Kartu") {
-        const n = mergeLsbuKk(r, map);
+      for (const rule of KK_LSBU_MAP) {
+        if (job.name !== rule.match) continue;
+        const n = mergeLsbuKkSumCols(r, map, rule.cols, rule.divideBy);
         if (n)
           outRows.push({
             job: `${job.name} [LSBU 0301]`,
             status: "info",
-            reason: `+${n} JUMLAH_KARTU`,
+            reason: `+${n} ${rule.label}`,
           });
-      } else if (job.name === "Jumlah Account") {
-        const n = mergeLsbuKkAccount(r, map);
-        if (n)
-          outRows.push({
-            job: `${job.name} [LSBU 0301]`,
-            status: "info",
-            reason: `+${n} JUMLAH_ACCOUNT`,
-          });
-      } else if (job.name === "Nilai Outstanding") {
-        const n = mergeLsbuKkOutstanding(r, map, job.divideBy);
-        if (n)
-          outRows.push({
-            job: `${job.name} [LSBU 0301]`,
-            status: "info",
-            reason: `+${n} SUM outstanding`,
-          });
-      } else if (job.name === "Nilai NPL") {
-        const n = mergeLsbuKkNpl(r, map, job.divideBy);
-        if (n)
-          outRows.push({
-            job: `${job.name} [LSBU 0301]`,
-            status: "info",
-            reason: `+${n} SUM NPL 90-180 DPD`,
-          });
+        break;
       }
     }
   }
@@ -423,7 +399,6 @@ export async function runProcess(req: NextRequest) {
       parsed.push({ name: f.name, rows: parseCsvText(await f.text()) });
     }
 
-    // ---- Streaming progress (default) ----
     if (wantStream && !dryRun) {
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
@@ -526,7 +501,6 @@ export async function runProcess(req: NextRequest) {
       });
     }
 
-    // ---- Non-stream (dry-run or stream=0) ----
     const results: Record<string, unknown>[] = [];
     for (const job of jobs) {
       try {
