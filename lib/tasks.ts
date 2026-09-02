@@ -13,7 +13,10 @@ export type SheetJob = {
 const D = "SHEET_DEBIT";
 const U = "SHEET_UE";
 const K = "SHEET_KK";
+/** Transaksi Vol/Nom (On Us / Off Us / Internasional) */
 const AT = "SHEET_ACQUIRER_TRX";
+/** Jumlah mesin EDC matrix (EDC Debet/Kredit/UE/Gabungan) — file Google terpisah di notebook */
+const AE = "SHEET_ACQUIRER_EDC";
 const FB = "SHEET_FRAUD_BANK";
 const FP = "SHEET_FRAUD_PENYEBAB";
 const P = "SHEET_PROP_CHANNEL";
@@ -84,10 +87,12 @@ export const KK_JOBS: SheetJob[] = [
 ];
 
 export const ACQUIRER_JOBS: SheetJob[] = [
-  { name: "EDC Debet", sheetName: "EDC Debet", fileHints: ["debet", "debit", "edc_debet", "edc_debit"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AT, kind: "matrix-edc" },
-  { name: "EDC Kredit", sheetName: "EDC Kredit", fileHints: ["kredit", "edc_kredit"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AT, kind: "matrix-edc" },
-  { name: "EDC UE", sheetName: "EDC Uang Elektronik", fileHints: ["ue.xlsx", "uang_elektronik", "_ue", "edc_ue"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AT, kind: "matrix-edc" },
-  { name: "EDC Gabungan", sheetName: "EDC Gabungan", fileHints: ["gabungan", "edc_gabungan"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AT, kind: "matrix-edc" },
+  // Matrix EDC → spreadsheet berbeda (notebook: 1Tl5nb_…)
+  { name: "EDC Debet", sheetName: "EDC Debet", fileHints: ["debet", "debit", "edc_debet", "edc_debit"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
+  { name: "EDC Kredit", sheetName: "EDC Kredit", fileHints: ["kredit", "edc_kredit"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
+  { name: "EDC UE", sheetName: "EDC Uang Elektronik", fileHints: ["ue.xlsx", "uang_elektronik", "_ue", "edc_ue"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
+  { name: "EDC Gabungan", sheetName: "EDC Gabungan", fileHints: ["gabungan", "edc_gabungan"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
+  // Vol/Nom → spreadsheet transaksi (notebook: 1dyII_…)
   { name: "Vol Internasional", sheetName: "Vol Internasional", fileHints: ["internasional"], valueColumn: "vol_inter", divideBy: 1, spreadsheetEnv: AT },
   { name: "Nom Internasional", sheetName: "Nom Internasional", fileHints: ["internasional"], valueColumn: "nom_inter", divideBy: 1_000_000, spreadsheetEnv: AT },
   { name: "Vol On Us", sheetName: "Vol On Us", fileHints: ["onus", "on_us"], valueColumn: "vol_onus", divideBy: 1, spreadsheetEnv: AT },
