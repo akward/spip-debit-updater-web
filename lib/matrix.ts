@@ -1,5 +1,6 @@
 import { getSheetsClient } from "./sheets";
 import type { Row } from "./parse";
+import { normalizeId } from "./parse";
 
 function colToA1(col: number): string {
   let n = col;
@@ -48,10 +49,6 @@ const ATM_TYPE_MAP: Record<string, number> = {
 };
 const ATM_SUB = ["ATM", "CDM", "ATM+CDM", "Non Tunai", "Total Mesin"];
 
-/**
- * Jumlah Mesin ATM — blok 5 kolom per bulan (CLI mesin.py).
- * CSV/rows: idpelapor, jenismesin (ACMAT/ACMCD/ACMAC/ACMNT), expr_1
- */
 export async function updateMesinAtmMatrix(opts: {
   spreadsheetId: string;
   sheetName?: string;
@@ -87,12 +84,9 @@ export async function updateMesinAtmMatrix(opts: {
   const subHeaders = sheetValues[headerColRow - 1].map((h) => String(h ?? ""));
   const bulanRow = (sheetValues[headerBulanRow - 1] || []).map((h) => String(h ?? ""));
 
-  // Aggregate source by id → [atm,cdm,atmcdm,nontunai,total]
   const byId = new Map<string, number[]>();
   for (const r of rows) {
-    const id = String(pick(r, ["idpelapor", "SANDI_PELAPOR"]) || "")
-      .replace(/\.0$/, "")
-      .trim();
+    const id = normalizeId(pick(r, ["idpelapor", "SANDI_PELAPOR"]) || "");
     if (!id) continue;
     const jenis = String(pick(r, ["jenismesin", "jenis_mesin"]) || "ACMAT")
       .trim()
@@ -106,7 +100,7 @@ export async function updateMesinAtmMatrix(opts: {
     arr[4] = arr[0] + arr[1] + arr[2] + arr[3];
   }
 
-  let startCol0: number; // 0-based
+  let startCol0: number;
   if (bulanRow.includes(monthLabel)) {
     startCol0 = bulanRow.indexOf(monthLabel);
   } else if (subHeaders.includes(monthLabel)) {
@@ -141,10 +135,9 @@ export async function updateMesinAtmMatrix(opts: {
       matrix.push([0, 0, 0, 0, 0]);
       continue;
     }
-    const id = String(raw).replace(/\.0$/, "").trim();
+    const id = normalizeId(raw);
     existing.add(id);
-    existing.add(String(Number(id)));
-    const vals = byId.get(id) || byId.get(String(Number(id))) || [0, 0, 0, 0, 0];
+    const vals = byId.get(id) || [0, 0, 0, 0, 0];
     matrix.push([...vals]);
   }
 
@@ -162,9 +155,9 @@ export async function updateMesinAtmMatrix(opts: {
   let appended = 0;
   for (const [id, vals] of byId.entries()) {
     if (vals[4] <= 0) continue;
-    if (existing.has(id) || existing.has(String(Number(id)))) continue;
+    if (existing.has(id)) continue;
     const newRow: (string | number)[] = Array(startCol0 + 5).fill("");
-    newRow[0] = Number.isFinite(Number(id)) ? Number(id) : id;
+    newRow[0] = id; // 9-digit string keeps leading zeros
     for (let i = 0; i < 5; i++) newRow[startCol0 + i] = vals[i];
     await withRetry(() =>
       sheets.spreadsheets.values.append({
@@ -184,16 +177,12 @@ export async function updateMesinAtmMatrix(opts: {
 
 const EDC_SUB = ["Open Loop", "Close Loop", "Total"];
 
-/**
- * EDC matrix 3 kolom: Open Loop / Close Loop / Total (statusmesin OL/CL).
- * rows: idpelapor, statusmesin, expr_1 (mesin) — total = OL+CL for expr_1 only in simple form.
- */
 export async function updateEdcMatrix(opts: {
   spreadsheetId: string;
   sheetName: string;
   monthLabel: string;
   rows: Row[];
-  valueField?: string; // expr_1 default (jumlah mesin)
+  valueField?: string;
   headerBulanRow?: number;
   headerColRow?: number;
   dataStartRow?: number;
@@ -225,12 +214,9 @@ export async function updateEdcMatrix(opts: {
   const subHeaders = sheetValues[headerColRow - 1].map((h) => String(h ?? ""));
   const bulanRow = (sheetValues[headerBulanRow - 1] || []).map((h) => String(h ?? ""));
 
-  // id → [open, close, total]
   const byId = new Map<string, number[]>();
   for (const r of rows) {
-    const id = String(pick(r, ["idpelapor", "SANDI_PELAPOR"]) || "")
-      .replace(/\.0$/, "")
-      .trim();
+    const id = normalizeId(pick(r, ["idpelapor", "SANDI_PELAPOR"]) || "");
     if (!id) continue;
     let status = String(pick(r, ["statusmesin", "status_mesin"]) || "OL")
       .trim()
@@ -281,10 +267,9 @@ export async function updateEdcMatrix(opts: {
       matrix.push([0, 0, 0]);
       continue;
     }
-    const id = String(raw).replace(/\.0$/, "").trim();
+    const id = normalizeId(raw);
     existing.add(id);
-    existing.add(String(Number(id)));
-    const vals = byId.get(id) || byId.get(String(Number(id))) || [0, 0, 0];
+    const vals = byId.get(id) || [0, 0, 0];
     matrix.push([...vals]);
   }
 
@@ -302,9 +287,9 @@ export async function updateEdcMatrix(opts: {
   let appended = 0;
   for (const [id, vals] of byId.entries()) {
     if (vals[2] <= 0) continue;
-    if (existing.has(id) || existing.has(String(Number(id)))) continue;
+    if (existing.has(id)) continue;
     const newRow: (string | number)[] = Array(startCol0 + 3).fill("");
-    newRow[0] = Number.isFinite(Number(id)) ? Number(id) : id;
+    newRow[0] = id;
     for (let i = 0; i < 3; i++) newRow[startCol0 + i] = vals[i];
     await withRetry(() =>
       sheets.spreadsheets.values.append({
