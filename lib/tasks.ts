@@ -7,6 +7,8 @@ export type SheetJob = {
   spreadsheetEnv: string;
   kind?: "column" | "matrix-atm" | "matrix-edc";
   keyColumn?: string;
+  /** Filter CSV rows by jenistransaksi (BL=Belanja, BY=Bill Payment) */
+  filterJenis?: string;
 };
 
 const D = "SHEET_DEBIT";
@@ -45,10 +47,6 @@ export const DEBIT_JOBS: SheetJob[] = [
   { name: "Nominal Transaksi Reversal", sheetName: "Nominal Transaksi Reversal", fileHints: ["reversal"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: D },
 ];
 
-/**
- * UE — fileHints harus spesifik agar tidak bentrok:
- * transfer.xlsx ≠ transfer_rekening.xlsx ≠ transfer_pemerintah.xlsx
- */
 export const UE_JOBS: SheetJob[] = [
   { name: "Jumlah Kartu", sheetName: "Jumlah Kartu", fileHints: ["jumlah_ue", "jumlahue"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
   { name: "Chip Based", sheetName: "Chip Based", fileHints: ["chip_base", "chipbased"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
@@ -65,7 +63,6 @@ export const UE_JOBS: SheetJob[] = [
   { name: "Nom Initial", sheetName: "Nom Initial", fileHints: ["initial"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: U },
   { name: "Vol Top Up", sheetName: "Vol Top Up", fileHints: ["topup", "top_up"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: U },
   { name: "Nom Top Up", sheetName: "Nom Top Up", fileHints: ["topup", "top_up"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: U },
-  // Transfer antar UE — hanya file bernama transfer (bukan rekening/pemerintah)
   {
     name: "Vol Transfer",
     sheetName: "Vol Transfer",
@@ -122,6 +119,7 @@ export const UE_JOBS: SheetJob[] = [
   { name: "Nom Reversal", sheetName: "Nom Reversal", fileHints: ["reversal"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: U },
 ];
 
+/** KK — 12 sheet sesuai notebook; Belanja=BL, Bill Payment=BY dari file yang sama */
 export const KK_JOBS: SheetJob[] = [
   { name: "Jumlah Kartu", sheetName: "Jumlah Kartu", fileHints: ["jumlah_kartu_kredit", "jumlah_kartu"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: K },
   { name: "Jumlah Account", sheetName: "Jumlah Account", fileHints: ["jumlah_account", "account"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: K },
@@ -129,8 +127,42 @@ export const KK_JOBS: SheetJob[] = [
   { name: "Nilai NPL", sheetName: "Nilai NPL", fileHints: ["npl"], valueColumn: "expr_1", divideBy: 1_000_000, spreadsheetEnv: K },
   { name: "Volume Tunai", sheetName: "Volume Tunai", fileHints: ["transaksi_tunai", "tunai"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: K },
   { name: "Nilai Tunai", sheetName: "Nilai Tunai", fileHints: ["transaksi_tunai", "tunai"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: K },
-  { name: "Volume Belanja", sheetName: "Volume Belanja", fileHints: ["transaksi_belanja", "belanja"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: K },
-  { name: "Nilai Belanja", sheetName: "Nilai Belanja", fileHints: ["transaksi_belanja", "belanja"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: K },
+  {
+    name: "Volume Belanja",
+    sheetName: "Volume Belanja",
+    fileHints: ["transaksi_belanja", "belanja"],
+    valueColumn: "expr_1",
+    divideBy: 1,
+    spreadsheetEnv: K,
+    filterJenis: "BL",
+  },
+  {
+    name: "Nilai Belanja",
+    sheetName: "Nilai Belanja",
+    fileHints: ["transaksi_belanja", "belanja"],
+    valueColumn: "expr_2",
+    divideBy: 1_000_000,
+    spreadsheetEnv: K,
+    filterJenis: "BL",
+  },
+  {
+    name: "Volume Bill Payment",
+    sheetName: "Volume Bill Payment",
+    fileHints: ["transaksi_belanja", "belanja", "bill"],
+    valueColumn: "expr_1",
+    divideBy: 1,
+    spreadsheetEnv: K,
+    filterJenis: "BY",
+  },
+  {
+    name: "Nilai Bill Payment",
+    sheetName: "Nilai Bill Payment",
+    fileHints: ["transaksi_belanja", "belanja", "bill"],
+    valueColumn: "expr_2",
+    divideBy: 1_000_000,
+    spreadsheetEnv: K,
+    filterJenis: "BY",
+  },
   { name: "Volume Reversal", sheetName: "Volume Reversal", fileHints: ["reversal"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: K },
   { name: "Nilai Reversal", sheetName: "Nilai Reversal", fileHints: ["reversal"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: K },
 ];
