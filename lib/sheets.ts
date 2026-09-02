@@ -103,12 +103,23 @@ export async function updateMonthColumn(opts: {
       fields: "sheets.properties",
     })
   );
-  const sheet = meta.data.sheets?.find((s) => s.properties?.title === sheetName);
-  if (!sheet) {
-    throw new Error(`Worksheet tidak ditemukan: ${sheetName}`);
+  const titles = meta.data.sheets?.map((s) => String(s.properties?.title || "")) || [];
+  let resolved =
+    titles.find((t) => t === sheetName) ||
+    titles.find((t) => t.trim().toLowerCase() === sheetName.trim().toLowerCase()) ||
+    titles.find(
+      (t) =>
+        t.toLowerCase().includes(sheetName.trim().toLowerCase()) ||
+        sheetName.trim().toLowerCase().includes(t.toLowerCase())
+    );
+  if (!resolved) {
+    throw new Error(
+      `Worksheet tidak ditemukan: "${sheetName}". Sheet yang ada: ${titles.slice(0, 40).join(" | ")}`
+    );
   }
+  const effectiveName = resolved;
 
-  const rangeAll = `'${sheetName}'!A1:ZZ`;
+  const rangeAll = `'${effectiveName.replace(/'/g, "''")}'!A1:AZ5000`;
   const res = await withRetry(() =>
     sheets.spreadsheets.values.get({
       spreadsheetId,
@@ -128,7 +139,7 @@ export async function updateMonthColumn(opts: {
     await withRetry(() =>
       sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `'${sheetName}'!${colToA1(colIndex + 1)}${headerRow}`,
+        range: `'${effectiveName.replace(/'/g, "''")}'!${colToA1(colIndex + 1)}${headerRow}`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: [[monthLabel]] },
       })
@@ -165,7 +176,7 @@ export async function updateMonthColumn(opts: {
         await withRetry(() =>
           sheets.spreadsheets.values.update({
             spreadsheetId,
-            range: `'${sheetName}'!${colToA1(colIndex + 1)}${dataStartRow}:${colToA1(colIndex + 1)}${dataStartRow + values.length - 1}`,
+            range: `'${effectiveName.replace(/'/g, "''")}'!${colToA1(colIndex + 1)}${dataStartRow}:${colToA1(colIndex + 1)}${dataStartRow + values.length - 1}`,
             valueInputOption: "USER_ENTERED",
             requestBody: { values },
           })
@@ -184,7 +195,7 @@ export async function updateMonthColumn(opts: {
       await withRetry(() =>
         sheets.spreadsheets.values.update({
           spreadsheetId,
-          range: `'${sheetName}'!${colToA1(colIndex + 1)}${dataStartRow}:${colToA1(colIndex + 1)}${dataStartRow + zeros.length - 1}`,
+          range: `'${effectiveName.replace(/'/g, "''")}'!${colToA1(colIndex + 1)}${dataStartRow}:${colToA1(colIndex + 1)}${dataStartRow + zeros.length - 1}`,
           valueInputOption: "USER_ENTERED",
           requestBody: { values: zeros },
         })
@@ -198,7 +209,6 @@ export async function updateMonthColumn(opts: {
     };
   }
 
-  // ---- write values (No di sheet dipad ke 9 digit untuk match CSV) ----
   const colValues: (string | number)[][] = [];
   let written = 0;
   for (let i = 0; i < dataRows.length; i++) {
@@ -222,7 +232,7 @@ export async function updateMonthColumn(opts: {
     await withRetry(() =>
       sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `'${sheetName}'!${colToA1(colIndex + 1)}${dataStartRow}:${colToA1(colIndex + 1)}${dataStartRow + colValues.length - 1}`,
+        range: `'${effectiveName.replace(/'/g, "''")}'!${colToA1(colIndex + 1)}${dataStartRow}:${colToA1(colIndex + 1)}${dataStartRow + colValues.length - 1}`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: colValues },
       })
@@ -239,11 +249,10 @@ export async function updateMonthColumn(opts: {
     if (val <= 0) continue;
     const nid = normalizeId(id);
     if (existing.has(nid)) continue;
-    // fraud codes remain as text; numeric ids as 9-digit string to preserve leading zeros
     const row: (string | number)[] = Array(Math.max(headers.length, colIndex + 1)).fill(
       ""
     );
-    row[kIdx] = /^\d+$/.test(nid) ? nid : nid; // keep as string so Sheets keeps leading zeros
+    row[kIdx] = nid;
     row[colIndex] = val;
     toAppend.push(row);
   }
@@ -251,7 +260,7 @@ export async function updateMonthColumn(opts: {
     await withRetry(() =>
       sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: `'${sheetName}'!A${dataStartRow}`,
+        range: `'${effectiveName.replace(/'/g, "''")}'!A${dataStartRow}`,
         valueInputOption: "USER_ENTERED",
         insertDataOption: "INSERT_ROWS",
         requestBody: { values: toAppend },
