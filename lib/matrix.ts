@@ -196,8 +196,25 @@ export async function updateMesinAtmMatrix(opts: {
     );
   }
 
-  // Rule: ID baru tidak ditambahkan
-  const appended = 0;
+  // ID baru hanya jika total != 0
+  let appended = 0;
+  for (const [id, vals] of byId.entries()) {
+    if (vals[4] === 0) continue;
+    if (existing.has(id)) continue;
+    const newRow: (string | number)[] = Array(startCol0 + 5).fill("");
+    newRow[0] = id;
+    for (let i = 0; i < 5; i++) newRow[startCol0 + i] = vals[i];
+    await withRetry(() =>
+      sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `${qSheet(resolved)}!A${dataStartRow}`,
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: { values: [newRow] },
+      })
+    );
+    appended++;
+  }
 
   await sleep(700);
   return { written: matrix.length, appended, mode: "matrix-atm", sheet: resolved };
@@ -341,8 +358,25 @@ export async function updateEdcMatrix(opts: {
     );
   }
 
-  // Rule: ID baru tidak ditambahkan
-  const appended = 0;
+  // ID baru hanya jika total != 0
+  let appended = 0;
+  for (const [id, vals] of byId.entries()) {
+    if (vals[2] === 0) continue;
+    if (existing.has(id)) continue;
+    const newRow: (string | number)[] = Array(startCol0 + 3).fill("");
+    newRow[0] = id;
+    for (let i = 0; i < 3; i++) newRow[startCol0 + i] = vals[i];
+    await withRetry(() =>
+      sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `${qSheet(resolved)}!A${dataStartRow}`,
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: { values: [newRow] },
+      })
+    );
+    appended++;
+  }
 
   await sleep(700);
   return { written: matrix.length, appended, mode: "matrix-edc", sheet: resolved };
