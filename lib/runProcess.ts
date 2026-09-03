@@ -55,6 +55,15 @@ function resolveSpreadsheetId(primaryEnv: string): string | undefined {
   return undefined;
 }
 
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function isQuotaError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /429|Quota exceeded|rate limit|Write requests per minute/i.test(msg);
+}
+
 function basename(name: string): string {
   return name.toLowerCase().replace(/\\/g, "/").split("/").pop() || "";
 }
@@ -464,8 +473,10 @@ export async function runProcess(req: NextRequest) {
             });
 
             const results: Record<string, unknown>[] = [];
+            const gapMs = group === "acquirer" ? 1500 : 800;
             for (let i = 0; i < jobs.length; i++) {
               const job = jobs[i];
+              if (i > 0) await sleep(gapMs);
               send({
                 type: "progress",
                 index: i + 1,
@@ -473,28 +484,75 @@ export async function runProcess(req: NextRequest) {
                 job: job.name,
                 message: `Menulis ${job.sheetName}…`,
               });
-              try {
-                const rows = await processOneJob({
-                  job,
-                  group,
-                  dryRun,
-                  monthLabel,
-                  parsed,
-                  lsbuByKind,
-                });
-                for (const r of rows) {
-                  results.push(r);
-                  send({ type: "job", index: i + 1, total: jobs.length, ...r });
+              let lastErr: unknown;
+              let done = false;
+              for (let attempt = 0; attempt < 4 && !done; attempt++) {
+                try {
+                  if (attempt > 0) {
+                    send({
+                      type: "progress",
+                      index: i + 1,
+                      total: jobs.length,
+                      job: job.name,
+                      message: `Retry ${attempt} (quota)… tunggu ${attempt * 20}s`,
+                    });
+                    await sleep(attempt * 20_000);
+                  }
+                  const rows = await processOneJob({
+                    job,
+                    group,
+                    dryRun,
+                    monthLabel,
+                    parsed,
+                    lsbuByKind,
+                  });
+                  let hitQuota = false;
+                  for (const r of rows) {
+                    const reason = String((r as { reason?: string }).reason || "");
+                    if (
+                      (r as { status?: string }).status === "error" &&
+                      isQuotaError(reason)
+                    ) {
+                      lastErr = new Error(reason);
+                      hitQuota = true;
+                      break;
+                    }
+                    results.push(r);
+                    send({ type: "job", index: i + 1, total: jobs.length, ...r });
+                  }
+                  if (hitQuota && attempt < 3) continue;
+                  if (hitQuota) {
+                    results.push({
+                      job: job.name,
+                      status: "error",
+                      sheet: job.sheetName,
+                      reason: String(lastErr),
+                    });
+                    send({
+                      type: "job",
+                      index: i + 1,
+                      total: jobs.length,
+                      job: job.name,
+                      status: "error",
+                      sheet: job.sheetName,
+                      reason: String(lastErr),
+                    });
+                  }
+                  done = true;
+                } catch (e) {
+                  lastErr = e;
+                  if (!isQuotaError(e) || attempt === 3) {
+                    const err = {
+                      job: job.name,
+                      status: "error",
+                      sheet: job.sheetName,
+                      reason: e instanceof Error ? e.message : String(e),
+                    };
+                    results.push(err);
+                    send({ type: "job", index: i + 1, total: jobs.length, ...err });
+                    done = true;
+                  }
                 }
-              } catch (e) {
-                const err = {
-                  job: job.name,
-                  status: "error",
-                  sheet: job.sheetName,
-                  reason: e instanceof Error ? e.message : String(e),
-                };
-                results.push(err);
-                send({ type: "job", index: i + 1, total: jobs.length, ...err });
               }
             }
 
@@ -544,24 +602,39 @@ export async function runProcess(req: NextRequest) {
     }
 
     const results: Record<string, unknown>[] = [];
-    for (const job of jobs) {
-      try {
-        const rows = await processOneJob({
-          job,
-          group,
-          dryRun,
-          monthLabel,
-          parsed,
-          lsbuByKind,
-        });
-        results.push(...rows);
-      } catch (e) {
-        results.push({
-          job: job.name,
-          status: "error",
-          sheet: job.sheetName,
-          reason: e instanceof Error ? e.message : String(e),
-        });
+    const gapMs = group === "acquirer" ? 1500 : 800;
+    for (let i = 0; i < jobs.length; i++) {
+      const job = jobs[i];
+      if (i > 0 && !dryRun) await sleep(gapMs);
+      let pushed = false;
+      for (let attempt = 0; attempt < 4 && !pushed; attempt++) {
+        try {
+          if (attempt > 0) await sleep(attempt * 20_000);
+          const rows = await processOneJob({
+            job,
+            group,
+            dryRun,
+            monthLabel,
+            parsed,
+            lsbuByKind,
+          });
+          const quotaRow = rows.find(
+            (r) =>
+              r.status === "error" && isQuotaError(String(r.reason || ""))
+          );
+          if (quotaRow && attempt < 3) continue;
+          results.push(...rows);
+          pushed = true;
+        } catch (e) {
+          if (isQuotaError(e) && attempt < 3) continue;
+          results.push({
+            job: job.name,
+            status: "error",
+            sheet: job.sheetName,
+            reason: e instanceof Error ? e.message : String(e),
+          });
+          pushed = true;
+        }
       }
     }
 
