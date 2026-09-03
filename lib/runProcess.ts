@@ -128,7 +128,8 @@ async function processOneJob(opts: {
       job.valueColumn,
       job.divideBy,
       job.keyColumn,
-      job.filterJenis
+      job.filterJenis,
+      job.filterMesin
     );
   }
 
@@ -337,6 +338,7 @@ async function processOneJob(opts: {
       monthLabel,
       source,
       filterJenis: job.filterJenis || null,
+      filterMesin: job.filterMesin || null,
       sample: [...map.entries()].slice(0, 3),
     });
     return outRows;
