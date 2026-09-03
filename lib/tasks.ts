@@ -96,12 +96,12 @@ export const ACQUIRER_JOBS: SheetJob[] = [
   // ===== SHEET_ACQUIRER_TAHUN / EDC matrix =====
   { name: "EDC Debet", sheetName: "EDC Debet", fileHints: ["merchant_kartu_debet", "mesin_edc_dan_merchant_kartu_debet", "edc_debet", "kartu_debet"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
   { name: "EDC Kredit", sheetName: "EDC Kredit", fileHints: ["merchant_kartu_kredit", "mesin_edc_dan_merchant_kartu_kredit", "edc_kredit", "kartu_kredit"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
-  { name: "EDC UE", sheetName: "EDC Uang Elektronik", fileHints: ["merchant_uang_elektronik", "mesin_edc_dan_merchant_uang_elektronik", "uang_elektronik"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
-  { name: "EDC Gabungan", sheetName: "EDC Gabungan", fileHints: ["merchant_gabungan", "mesin_edc_dan_merchant_gabungan", "edc_gabungan"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
+  { name: "EDC UE", sheetName: "EDC Uang Elektronik", fileHints: ["jumlah_mesin_edc_dan_merchant_uang_elektronik", "mesin_edc_dan_merchant_uang_elektronik", "merchant_uang_elektronik", "uang_elektronik"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
+  { name: "EDC Gabungan", sheetName: "EDC Gabungan", fileHints: ["jumlah_mesin_edc_dan_merchant_gabungan", "mesin_edc_dan_merchant_gabungan", "merchant_gabungan", "edc_gabungan"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
   { name: "Merchant Debet", sheetName: "Merchant Debet", fileHints: ["merchant_kartu_debet", "mesin_edc_dan_merchant_kartu_debet", "edc_debet", "kartu_debet"], valueColumn: "expr_2", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
   { name: "Merchant Kredit", sheetName: "Merchant Kredit", fileHints: ["merchant_kartu_kredit", "mesin_edc_dan_merchant_kartu_kredit", "edc_kredit", "kartu_kredit"], valueColumn: "expr_2", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
-  { name: "Merchant UE", sheetName: "Merchant Uang Elektronik", fileHints: ["merchant_uang_elektronik", "mesin_edc_dan_merchant_uang_elektronik", "uang_elektronik"], valueColumn: "expr_2", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
-  { name: "Merchant Gabungan", sheetName: "Merchant Gabungan", fileHints: ["merchant_gabungan", "mesin_edc_dan_merchant_gabungan", "edc_gabungan"], valueColumn: "expr_2", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
+  { name: "Merchant UE", sheetName: "Merchant Uang Elektronik", fileHints: ["jumlah_mesin_edc_dan_merchant_uang_elektronik", "mesin_edc_dan_merchant_uang_elektronik", "merchant_uang_elektronik", "uang_elektronik"], valueColumn: "expr_2", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
+  { name: "Merchant Gabungan", sheetName: "Merchant Gabungan", fileHints: ["jumlah_mesin_edc_dan_merchant_gabungan", "mesin_edc_dan_merchant_gabungan", "merchant_gabungan", "edc_gabungan"], valueColumn: "expr_2", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
 
   // ===== SHEET_ACQUIRER_TRX — jenismesin filter (Acquirer.ipynb) =====
   // Vol/Nom Internasional → ADCGB only (user + notebook intent)
