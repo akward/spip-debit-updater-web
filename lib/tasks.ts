@@ -88,9 +88,12 @@ export const KK_JOBS: SheetJob[] = [
   { name: "Nilai Reversal", sheetName: "Nilai Reversal", fileHints: ["reversal"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: K },
 ];
 
-/** Notebook Acquirer Tahun 2026 — 26 sheet total */
+/**
+ * Acquirer.ipynb — 26 sheet.
+ * Raw CSV (Infra_-_Transaksi_EDC_*.csv) difilter jenismesin lalu sum expr_1/expr_2.
+ */
 export const ACQUIRER_JOBS: SheetJob[] = [
-  // ===== SHEET_ACQUIRER_TAHUN / EDC matrix (1Tl5nb_…) =====
+  // ===== SHEET_ACQUIRER_TAHUN / EDC matrix =====
   { name: "EDC Debet", sheetName: "EDC Debet", fileHints: ["merchant_kartu_debet", "mesin_edc_dan_merchant_kartu_debet", "edc_debet", "kartu_debet"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
   { name: "EDC Kredit", sheetName: "EDC Kredit", fileHints: ["merchant_kartu_kredit", "mesin_edc_dan_merchant_kartu_kredit", "edc_kredit", "kartu_kredit"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
   { name: "EDC UE", sheetName: "EDC Uang Elektronik", fileHints: ["merchant_uang_elektronik", "mesin_edc_dan_merchant_uang_elektronik", "uang_elektronik"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
@@ -99,25 +102,29 @@ export const ACQUIRER_JOBS: SheetJob[] = [
   { name: "Merchant Kredit", sheetName: "Merchant Kredit", fileHints: ["merchant_kartu_kredit", "mesin_edc_dan_merchant_kartu_kredit", "edc_kredit", "kartu_kredit"], valueColumn: "expr_2", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
   { name: "Merchant UE", sheetName: "Merchant Uang Elektronik", fileHints: ["merchant_uang_elektronik", "mesin_edc_dan_merchant_uang_elektronik", "uang_elektronik"], valueColumn: "expr_2", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
   { name: "Merchant Gabungan", sheetName: "Merchant Gabungan", fileHints: ["merchant_gabungan", "mesin_edc_dan_merchant_gabungan", "edc_gabungan"], valueColumn: "expr_2", divideBy: 1, spreadsheetEnv: AE, kind: "matrix-edc" },
-  // ===== SHEET_ACQUIRER_TRX — raw CSV filtered by jenismesin =====
-  // Vol/Nom Internasional: hanya ADCGB (sesuai permintaan user)
+
+  // ===== SHEET_ACQUIRER_TRX — jenismesin filter (Acquirer.ipynb) =====
+  // Vol/Nom Internasional → ADCGB only (user + notebook intent)
   { name: "Vol Internasional", sheetName: "Vol Internasional", fileHints: ["off_us_internasional", "internasional"], valueColumn: "vol_inter", divideBy: 1, spreadsheetEnv: AT, filterMesin: ["ADCGB"] },
   { name: "Nom Internasional", sheetName: "Nom Internasional", fileHints: ["off_us_internasional", "internasional"], valueColumn: "nom_inter", divideBy: 1_000_000, spreadsheetEnv: AT, filterMesin: ["ADCGB"] },
-  // On Us / Off Us EDC: ADCAD + ADCGB + ADCKK + ADCUE (notebook)
+
+  // On Us / Off Us EDC → ADCAD + ADCGB + ADCKK + ADCUE (cell 36/41)
   { name: "Vol On Us", sheetName: "Vol On Us", fileHints: ["edc_on_us", "on_us", "onus"], valueColumn: "vol_onus", divideBy: 1, spreadsheetEnv: AT, filterMesin: ["ADCAD", "ADCGB", "ADCKK", "ADCUE"] },
   { name: "Nom On US", sheetName: "Nom On US", fileHints: ["edc_on_us", "on_us", "onus"], valueColumn: "nom_onus", divideBy: 1_000_000, spreadsheetEnv: AT, filterMesin: ["ADCAD", "ADCGB", "ADCKK", "ADCUE"] },
   { name: "Vol Off Us", sheetName: "Vol Off Us", fileHints: ["edc_off_us", "off_us", "offus"], valueColumn: "vol_offus", divideBy: 1, spreadsheetEnv: AT, filterMesin: ["ADCAD", "ADCGB", "ADCKK", "ADCUE"] },
   { name: "Nom Off Us", sheetName: "Nom Off Us", fileHints: ["edc_off_us", "off_us", "offus"], valueColumn: "nom_offus", divideBy: 1_000_000, spreadsheetEnv: AT, filterMesin: ["ADCAD", "ADCGB", "ADCKK", "ADCUE"] },
-  // ATM variants
+
+  // ATM — Internasional: ACMAT+ACMAC; On/Off Us: +ACMCD+ACMNT
   { name: "Vol Internasional ATM", sheetName: "Vol Internasional ATM", fileHints: ["off_us_internasional", "internasional"], valueColumn: "vol_atm", divideBy: 1, spreadsheetEnv: AT, filterMesin: ["ACMAT", "ACMAC"] },
   { name: "Nom Internasional ATM", sheetName: "Nom Internasional ATM", fileHints: ["off_us_internasional", "internasional"], valueColumn: "nom_atm", divideBy: 1_000_000, spreadsheetEnv: AT, filterMesin: ["ACMAT", "ACMAC"] },
   { name: "Vol On Us ATM", sheetName: "Vol On Us ATM", fileHints: ["edc_on_us", "on_us", "onus"], valueColumn: "vol_atm", divideBy: 1, spreadsheetEnv: AT, filterMesin: ["ACMAT", "ACMAC", "ACMCD", "ACMNT"] },
   { name: "Nom On US ATM", sheetName: "Nom On US ATM", fileHints: ["edc_on_us", "on_us", "onus"], valueColumn: "nom_atm", divideBy: 1_000_000, spreadsheetEnv: AT, filterMesin: ["ACMAT", "ACMAC", "ACMCD", "ACMNT"] },
   { name: "Vol Off Us ATM", sheetName: "Vol Off Us ATM", fileHints: ["edc_off_us", "off_us", "offus"], valueColumn: "vol_atm", divideBy: 1, spreadsheetEnv: AT, filterMesin: ["ACMAT", "ACMAC", "ACMCD", "ACMNT"] },
   { name: "Nom Off Us ATM", sheetName: "Nom Off Us ATM", fileHints: ["edc_off_us", "off_us", "offus"], valueColumn: "nom_atm", divideBy: 1_000_000, spreadsheetEnv: AT, filterMesin: ["ACMAT", "ACMAC", "ACMCD", "ACMNT"] },
-  // UE variants — Internasional: ADCUE; On/Off Us: RUE
-  { name: "Vol Internasional UE", sheetName: "Vol Internasional UE", fileHints: ["off_us_internasional", "internasional"], valueColumn: "vol_ue", divideBy: 1, spreadsheetEnv: AT, filterMesin: ["ADCUE"] },
-  { name: "Nom Internasional UE", sheetName: "Nom Internasional UE", fileHints: ["off_us_internasional", "internasional"], valueColumn: "nom_ue", divideBy: 1_000_000, spreadsheetEnv: AT, filterMesin: ["ADCUE"] },
+
+  // UE — semua sheet UE: jenismesin RUE (cell 22/26/28/59)
+  { name: "Vol Internasional UE", sheetName: "Vol Internasional UE", fileHints: ["off_us_internasional", "internasional"], valueColumn: "vol_ue", divideBy: 1, spreadsheetEnv: AT, filterMesin: ["RUE"] },
+  { name: "Nom Internasional UE", sheetName: "Nom Internasional UE", fileHints: ["off_us_internasional", "internasional"], valueColumn: "nom_ue", divideBy: 1_000_000, spreadsheetEnv: AT, filterMesin: ["RUE"] },
   { name: "Vol On Us UE", sheetName: "Vol On Us UE", fileHints: ["edc_on_us", "on_us", "onus"], valueColumn: "vol_ue", divideBy: 1, spreadsheetEnv: AT, filterMesin: ["RUE"] },
   { name: "Nom On US UE", sheetName: "Nom On US UE", fileHints: ["edc_on_us", "on_us", "onus"], valueColumn: "nom_ue", divideBy: 1_000_000, spreadsheetEnv: AT, filterMesin: ["RUE"] },
   { name: "Vol Off Us UE", sheetName: "Vol Off Us UE", fileHints: ["edc_off_us", "off_us", "offus"], valueColumn: "vol_ue", divideBy: 1, spreadsheetEnv: AT, filterMesin: ["RUE"] },
