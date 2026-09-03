@@ -53,7 +53,7 @@ async function sleep(ms: number) {
   await new Promise((r) => setTimeout(r, ms));
 }
 
-async function withRetry<T>(fn: () => Promise<T>, tries = 5): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, tries = 8): Promise<T> {
   let last: unknown;
   for (let i = 0; i < tries; i++) {
     try {
@@ -62,7 +62,10 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 5): Promise<T> {
       last = e;
       const msg = e instanceof Error ? e.message : String(e);
       if (!/429|Quota|rate|502|503|timeout/i.test(msg) || i === tries - 1) throw e;
-      await sleep(1500 * (i + 1));
+      const wait = /429|Quota|Write requests/i.test(msg)
+        ? 15_000 * (i + 1)
+        : 1500 * (i + 1);
+      await sleep(wait);
     }
   }
   throw last;
@@ -268,7 +271,7 @@ export async function updateMonthColumn(opts: {
     );
   }
 
-  await sleep(400);
+  await sleep(700);
   return {
     written,
     appended: toAppend.length,
