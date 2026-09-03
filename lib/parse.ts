@@ -168,11 +168,19 @@ export function findBestFile<
       const stem = n.replace(/\.csv$/i, "").replace(/\.xlsx$/i, "");
       let score = hl.length * 2;
       if (stem === hl || stem.endsWith(hl) || stem.startsWith(hl)) score += 80;
-      // Prefer longer/more specific hints (e.g. off_us_internasional > off_us)
+      // Prefer longer/more specific hints
       if (hl.includes("internasional") && n.includes("internasional")) score += 100;
       if (hl.includes("internasional") && !n.includes("internasional")) score -= 200;
       if (hl.includes("on_us") && n.includes("on_us") && !n.includes("off")) score += 40;
       if (hl.includes("off_us") && n.includes("off_us") && !n.includes("internasional")) score += 40;
+      // EDC / Merchant machine files
+      if (hl.includes("uang_elektronik") && n.includes("uang_elektronik")) score += 120;
+      if (hl.includes("uang_elektronik") && !n.includes("uang_elektronik")) score -= 250;
+      if (hl.includes("gabungan") && n.includes("gabungan")) score += 120;
+      if (hl.includes("gabungan") && !n.includes("gabungan")) score -= 250;
+      if (hl.includes("kartu_debet") && n.includes("debet")) score += 80;
+      if (hl.includes("kartu_kredit") && n.includes("kredit")) score += 80;
+      if (hl.includes("merchant") && n.includes("merchant")) score += 30;
       if (score > bestScore) {
         bestScore = score;
         best = f;
