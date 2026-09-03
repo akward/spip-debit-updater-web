@@ -146,7 +146,7 @@ export async function updateMesinAtmMatrix(opts: {
 
   const byId = new Map<string, number[]>();
   for (const r of rows) {
-    const id = normalizeId(pick(r, ["idpelapor", "SANDI_PELAPOR"]) || ""));
+    const id = normalizeId(pick(r, ["idpelapor", "SANDI_PELAPOR"]) || "");
     if (!id) continue;
     const jenis = String(pick(r, ["jenismesin", "jenis_mesin"]) || "ACMAT")
       .trim()
