@@ -81,7 +81,6 @@ export function buildValueMap(
       if (jt !== filterJenis) continue;
     }
 
-    // Filter jenismesin (Acquirer Internasional / On Us / Off Us)
     if (mesinSet) {
       const jm = (
         pick(row, ["jenismesin", "JENIS_MESIN", "jenis_mesin"]) || ""
@@ -97,7 +96,6 @@ export function buildValueMap(
     if (!id || id === "Total") continue;
 
     let valRaw: string | undefined;
-    // Prefer exact pivoted column (vol_inter, nom_ue, …) if present
     const exact = pick(row, [
       valueColumn,
       valueColumn.toLowerCase(),
@@ -113,7 +111,6 @@ export function buildValueMap(
     } else if (exact !== undefined) {
       valRaw = exact;
     } else if (isNominal) {
-      // Raw CSV: after jenismesin filter use expr_2
       valRaw = pick(row, [
         "expr_2",
         "sum(nominaltransaksi)",
@@ -158,22 +155,29 @@ export function matchFile(filename: string, hints: string[]): boolean {
 export function findBestFile<
   T extends { name: string }
 >(files: T[], hints: string[]): T | undefined {
+  // Expand short fraud hints → actual CSV tokens (notebook Fraud_-_Kartu_Kredit.csv)
+  const expanded: string[] = [];
+  for (const h of hints) {
+    expanded.push(h);
+    const hl = h.toLowerCase();
+    if (hl === "fraud_kk" || hl === "kk") expanded.push("kartu_kredit", "kredit");
+    else if (hl === "fraud_atm") expanded.push("kartu_atm", "atm_dan_debet");
+    else if (hl === "fraud_ue" || hl === "ue") expanded.push("uang_elektronik", "elektronik");
+  }
   let best: T | undefined;
   let bestScore = 0;
   for (const f of files) {
     const n = basename(f.name);
-    for (const h of hints) {
+    for (const h of expanded) {
       const hl = h.toLowerCase();
       if (!n.includes(hl)) continue;
       const stem = n.replace(/\.csv$/i, "").replace(/\.xlsx$/i, "");
       let score = hl.length * 2;
       if (stem === hl || stem.endsWith(hl) || stem.startsWith(hl)) score += 80;
-      // Prefer longer/more specific hints
       if (hl.includes("internasional") && n.includes("internasional")) score += 100;
       if (hl.includes("internasional") && !n.includes("internasional")) score -= 200;
       if (hl.includes("on_us") && n.includes("on_us") && !n.includes("off")) score += 40;
       if (hl.includes("off_us") && n.includes("off_us") && !n.includes("internasional")) score += 40;
-      // EDC / Merchant machine files
       if (hl.includes("uang_elektronik") && n.includes("uang_elektronik")) score += 120;
       if (hl.includes("uang_elektronik") && !n.includes("uang_elektronik")) score -= 250;
       if (hl.includes("gabungan") && n.includes("gabungan")) score += 120;
@@ -181,6 +185,9 @@ export function findBestFile<
       if (hl.includes("kartu_debet") && n.includes("debet")) score += 80;
       if (hl.includes("kartu_kredit") && n.includes("kredit")) score += 80;
       if (hl.includes("merchant") && n.includes("merchant")) score += 30;
+      // Prefer exact kartu kredit file over generic kredit noise
+      if ((hl === "kartu_kredit" || hl === "kredit") && n.includes("kartu_kredit")) score += 100;
+      if (hl === "kredit" && n.includes("debet")) score -= 50;
       if (score > bestScore) {
         bestScore = score;
         best = f;
