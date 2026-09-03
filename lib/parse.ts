@@ -51,7 +51,8 @@ export function buildValueMap(
   valueColumn: string,
   divideBy: number,
   keyColumn?: string,
-  filterJenis?: string
+  filterJenis?: string,
+  filterMesin?: string[]
 ): Map<string, number> {
   const map = new Map<string, number>();
   const keyNames = keyColumn
@@ -67,6 +68,11 @@ export function buildValueMap(
   const isNominal =
     vc === "expr_2" || vc.includes("nom") || vc.includes("nilai");
 
+  const mesinSet =
+    filterMesin && filterMesin.length
+      ? new Set(filterMesin.map((m) => m.trim().toUpperCase()))
+      : null;
+
   for (const row of rows) {
     if (filterJenis) {
       const jt = (
@@ -75,14 +81,28 @@ export function buildValueMap(
       if (jt !== filterJenis) continue;
     }
 
+    // Filter jenismesin (Acquirer Internasional / On Us / Off Us)
+    if (mesinSet) {
+      const jm = (
+        pick(row, ["jenismesin", "JENIS_MESIN", "jenis_mesin"]) || ""
+      )
+        .trim()
+        .toUpperCase();
+      if (!mesinSet.has(jm)) continue;
+    }
+
     const idRaw = pick(row, keyNames);
     if (!idRaw) continue;
     const id = normalizeId(idRaw);
     if (!id || id === "Total") continue;
 
     let valRaw: string | undefined;
-    // Always prefer exact column name first (vol_atm, nom_ue, vol_inter, …)
-    const exact = pick(row, [valueColumn, valueColumn.toLowerCase(), valueColumn.toUpperCase()]);
+    // Prefer exact pivoted column (vol_inter, nom_ue, …) if present
+    const exact = pick(row, [
+      valueColumn,
+      valueColumn.toLowerCase(),
+      valueColumn.toUpperCase(),
+    ]);
     if (valueColumn === "jumlah") {
       valRaw = exact || pick(row, ["jumlah"]) || pick(row, ["expr_1"]) || undefined;
       if (!valRaw) {
@@ -93,6 +113,7 @@ export function buildValueMap(
     } else if (exact !== undefined) {
       valRaw = exact;
     } else if (isNominal) {
+      // Raw CSV: after jenismesin filter use expr_2
       valRaw = pick(row, [
         "expr_2",
         "sum(nominaltransaksi)",
