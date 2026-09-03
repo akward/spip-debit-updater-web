@@ -84,6 +84,21 @@ async function resolveSheetTitle(
   );
 }
 
+function lookupVals(
+  byId: Map<string, number[]>,
+  rawId: string,
+  width: number
+): number[] {
+  const id = normalizeId(rawId);
+  if (byId.has(id)) return byId.get(id)!;
+  const bare = id.replace(/^0+/, "") || "0";
+  for (const [k, v] of byId.entries()) {
+    if (k === id) return v;
+    if ((k.replace(/^0+/, "") || "0") === bare) return v;
+  }
+  return Array(width).fill(0);
+}
+
 const ATM_TYPE_MAP: Record<string, number> = {
   ACMAT: 0,
   ACMCD: 1,
@@ -100,7 +115,7 @@ export async function updateMesinAtmMatrix(opts: {
   headerBulanRow?: number;
   headerColRow?: number;
   dataStartRow?: number;
-}): Promise<{ written: number; appended: number; mode: string; sheet?: string }> {
+}): Promise<{ written: number; appended: number; mode: string; sheet?: string; matched?: number; sourceIds?: number }> {
   const {
     spreadsheetId,
     sheetName = "Jumlah Mesin ATM",
@@ -181,7 +196,7 @@ export async function updateMesinAtmMatrix(opts: {
     }
     const id = normalizeId(raw);
     existing.add(id);
-    const vals = byId.get(id) || [0, 0, 0, 0, 0];
+    const vals = lookupVals(byId, raw, 5);
     matrix.push([...vals]);
   }
 
@@ -216,8 +231,16 @@ export async function updateMesinAtmMatrix(opts: {
     appended++;
   }
 
+  const matched = matrix.filter((r) => r.some((x) => x !== 0)).length;
   await sleep(700);
-  return { written: matrix.length, appended, mode: "matrix-atm", sheet: resolved };
+  return {
+    written: matrix.length,
+    appended,
+    matched,
+    sourceIds: byId.size,
+    mode: "matrix-atm",
+    sheet: resolved,
+  };
 }
 
 const EDC_SUB = ["Open Loop", "Close Loop", "Total"];
@@ -244,7 +267,7 @@ export async function updateEdcMatrix(opts: {
   headerBulanRow?: number;
   headerColRow?: number;
   dataStartRow?: number;
-}): Promise<{ written: number; appended: number; mode: string; sheet?: string }> {
+}): Promise<{ written: number; appended: number; mode: string; sheet?: string; matched?: number; sourceIds?: number }> {
   const {
     spreadsheetId,
     sheetName,
@@ -343,7 +366,7 @@ export async function updateEdcMatrix(opts: {
     }
     const id = normalizeId(raw);
     existing.add(id);
-    const vals = byId.get(id) || [0, 0, 0];
+    const vals = lookupVals(byId, raw, 3);
     matrix.push([...vals]);
   }
 
@@ -378,6 +401,14 @@ export async function updateEdcMatrix(opts: {
     appended++;
   }
 
+  const matched = matrix.filter((r) => r.some((x) => x !== 0)).length;
   await sleep(700);
-  return { written: matrix.length, appended, mode: "matrix-edc", sheet: resolved };
+  return {
+    written: matrix.length,
+    appended,
+    matched,
+    sourceIds: byId.size,
+    mode: "matrix-edc",
+    sheet: resolved,
+  };
 }
