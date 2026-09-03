@@ -288,25 +288,50 @@ export async function updateEdcMatrix(opts: {
     })
   );
   const sheetValues = res.data.values || [];
-  if (sheetValues.length < 3) {
+  if (sheetValues.length < 2) {
     throw new Error(`Sheet ${resolved} terlalu pendek`);
   }
 
-  const row3 = (sheetValues[2] || []).map((h) => String(h ?? "").trim());
-  const row4 = (sheetValues[3] || []).map((h) => String(h ?? "").trim());
+  const isIdLike = (v: unknown): boolean => {
+    const s = String(v ?? "").trim().replace(/\.0$/, "");
+    return /^\d{4,}$/.test(s);
+  };
+
+  let headerBulanRow = 3;
+  let headerColRow: number | null = null;
+  let dataStartRow = 5;
+
+  for (let r = 0; r < Math.min(5, sheetValues.length); r++) {
+    const row = (sheetValues[r] || []).map((h) => String(h ?? "").trim());
+    const monthCount = row.filter((h) => h && isMonthHeader(h)).length;
+    if (monthCount >= 2) {
+      headerBulanRow = r + 1;
+      break;
+    }
+  }
+
+  for (let r = 0; r < Math.min(10, sheetValues.length); r++) {
+    if (isIdLike(sheetValues[r]?.[0])) {
+      dataStartRow = r + 1;
+      break;
+    }
+  }
 
   const subHeaderTokens = new Set(
-    ["open loop", "close loop", "total", "open_loop", "close_loop", "opening", "closing"]
+    ["open loop", "close loop", "total", "open_loop", "close_loop"]
   );
-  const row4LooksLikeSub = row4.some((h) =>
-    subHeaderTokens.has(h.toLowerCase())
-  );
-  const headerBulanRow = 3;
-  const headerColRow = row4LooksLikeSub ? 4 : 3;
-  const dataStartRow = row4LooksLikeSub ? 5 : 4;
+  for (let r = headerBulanRow; r < dataStartRow - 1; r++) {
+    const row = (sheetValues[r] || []).map((h) => String(h ?? "").trim().toLowerCase());
+    if (row.some((h) => subHeaderTokens.has(h))) {
+      headerColRow = r + 1;
+      break;
+    }
+  }
+  const hasSubHeader = headerColRow !== null;
 
-  const bulanRow = row3;
-  const subHeaders = row4LooksLikeSub ? row4 : row3;
+  const bulanRow = (sheetValues[headerBulanRow - 1] || []).map((h) =>
+    String(h ?? "").trim()
+  );
 
   const byId = new Map<string, number[]>();
   for (const r of rows) {
@@ -316,7 +341,8 @@ export async function updateEdcMatrix(opts: {
       .trim()
       .toUpperCase();
     if (status === "OPEN LOOP" || status === "OPEN") status = "OL";
-    if (status === "CLOSE LOOP" || status === "CLOSE" || status === "CLOSED") status = "CL";
+    if (status === "CLOSE LOOP" || status === "CLOSE" || status === "CLOSED")
+      status = "CL";
     if (!status) status = "OL";
     const val = Number(
       String(
@@ -340,13 +366,13 @@ export async function updateEdcMatrix(opts: {
     arr[2] = arr[0] + arr[1];
   }
 
-  function findAllMonthIdx(headers: string[], label: string): number[] {
+  const findAllMonthIdx = (headers: string[], label: string): number[] => {
     const out: number[] = [];
     headers.forEach((h, i) => {
       if (h === label || h.startsWith(label + " ")) out.push(i);
     });
     return out;
-  }
+  };
 
   let lastOtherMonth = -1;
   for (let i = 0; i < bulanRow.length; i++) {
@@ -355,65 +381,41 @@ export async function updateEdcMatrix(opts: {
     if (h === monthLabel || h.startsWith(monthLabel + " ")) continue;
     if (isMonthHeader(h)) lastOtherMonth = i;
   }
-  for (let i = 0; i < subHeaders.length; i++) {
-    const h = subHeaders[i];
-    if (!h) continue;
-    if (h === monthLabel || h.startsWith(monthLabel + " ")) continue;
-    if (isMonthHeader(h)) lastOtherMonth = Math.max(lastOtherMonth, i);
-  }
 
   const existingTargets = findAllMonthIdx(bulanRow, monthLabel);
   const sequential =
-    lastOtherMonth >= 0 ? lastOtherMonth + 3 : Math.max(bulanRow.length, subHeaders.length, 1);
+    lastOtherMonth >= 0 ? lastOtherMonth + 3 : Math.max(bulanRow.length, 3);
 
   const targetCols = new Set<number>();
-  targetCols.add(sequential);
   for (const t of existingTargets) targetCols.add(t);
-
-  const forceRow4 =
-    /uang elektronik|gabungan/i.test(sheetName) &&
-    row4.length > 0 &&
-    /^\d+/.test(String(row4[0] || "").replace(/\.0$/, ""));
-  const effectiveDataStart = forceRow4 ? 4 : dataStartRow;
+  targetCols.add(sequential);
 
   for (const startCol0 of targetCols) {
     const needHeader =
       bulanRow[startCol0] !== monthLabel &&
       !String(bulanRow[startCol0] || "").startsWith(monthLabel);
-    if (needHeader) {
-      if (row4LooksLikeSub) {
-        await withRetry(() =>
-          sheets.spreadsheets.values.update({
-            spreadsheetId,
-            range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${headerBulanRow}`,
-            valueInputOption: "USER_ENTERED",
-            requestBody: { values: [[monthLabel]] },
-          })
-        );
-        await withRetry(() =>
-          sheets.spreadsheets.values.update({
-            spreadsheetId,
-            range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${headerColRow}`,
-            valueInputOption: "USER_ENTERED",
-            requestBody: { values: [EDC_SUB] },
-          })
-        );
-      } else {
-        await withRetry(() =>
-          sheets.spreadsheets.values.update({
-            spreadsheetId,
-            range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${headerBulanRow}`,
-            valueInputOption: "USER_ENTERED",
-            requestBody: {
-              values: [[`${monthLabel} OL`, `${monthLabel} CL`, `${monthLabel} Total`]],
-            },
-          })
-        );
-      }
+    if (!needHeader) continue;
+    await withRetry(() =>
+      sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${headerBulanRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [[monthLabel]] },
+      })
+    );
+    if (hasSubHeader && headerColRow) {
+      await withRetry(() =>
+        sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${headerColRow}`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [EDC_SUB] },
+        })
+      );
     }
   }
 
-  const dataRows = sheetValues.slice(effectiveDataStart - 1);
+  const dataRows = sheetValues.slice(dataStartRow - 1);
   const matrix: number[][] = [];
   const existing = new Set<string>();
 
@@ -428,10 +430,13 @@ export async function updateEdcMatrix(opts: {
       matrix.push([0, 0, 0]);
       continue;
     }
+    if (!isIdLike(raw)) {
+      matrix.push([0, 0, 0]);
+      continue;
+    }
     const id = normalizeId(raw);
     existing.add(id);
-    const vals = lookupVals(byId, raw, 3);
-    matrix.push([...vals]);
+    matrix.push([...lookupVals(byId, raw, 3)]);
   }
 
   if (matrix.length) {
@@ -439,7 +444,7 @@ export async function updateEdcMatrix(opts: {
       await withRetry(() =>
         sheets.spreadsheets.values.update({
           spreadsheetId,
-          range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${effectiveDataStart}:${colToA1(startCol0 + 3)}${effectiveDataStart + matrix.length - 1}`,
+          range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${dataStartRow}:${colToA1(startCol0 + 3)}${dataStartRow + matrix.length - 1}`,
           valueInputOption: "USER_ENTERED",
           requestBody: { values: matrix },
         })
@@ -448,7 +453,8 @@ export async function updateEdcMatrix(opts: {
   }
 
   let appended = 0;
-  const primaryCol = sequential;
+  const primaryCol =
+    existingTargets.length > 0 ? existingTargets[0] : sequential;
   for (const [id, vals] of byId.entries()) {
     if (vals[2] === 0) continue;
     if (existing.has(id)) continue;
@@ -458,7 +464,7 @@ export async function updateEdcMatrix(opts: {
     await withRetry(() =>
       sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: `${qSheet(resolved)}!A${effectiveDataStart}`,
+        range: `${qSheet(resolved)}!A${dataStartRow}`,
         valueInputOption: "USER_ENTERED",
         insertDataOption: "INSERT_ROWS",
         requestBody: { values: [newRow] },
@@ -470,7 +476,7 @@ export async function updateEdcMatrix(opts: {
   const headerPreview = bulanRow
     .map((h, i) => (h ? `${i + 1}:${h}` : null))
     .filter(Boolean)
-    .slice(-12);
+    .slice(-15);
 
   const matched = matrix.filter((r) => r.some((x) => x !== 0)).length;
   await sleep(700);
@@ -480,8 +486,10 @@ export async function updateEdcMatrix(opts: {
     matched,
     sourceIds: byId.size,
     col: primaryCol + 1,
-    cols: [...targetCols].map((c) => c + 1),
-    dataStart: effectiveDataStart,
+    cols: [...targetCols].map((x) => x + 1),
+    dataStart: dataStartRow,
+    headerBulanRow,
+    headerColRow,
     lastOtherMonth: lastOtherMonth >= 0 ? lastOtherMonth + 1 : null,
     headerPreview,
     mode: "matrix-edc",
