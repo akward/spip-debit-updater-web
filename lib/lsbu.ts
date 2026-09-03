@@ -114,7 +114,6 @@ export function lsbuMesinAtmRows(lsbuRows: Row[]): Row[] {
   return out;
 }
 
-// Re-export fixed debit trx merge from dedicated module (notebook-accurate columns)
 export { mergeLsbuDebitTrx, DEBIT_TRX_LSBU } from "./lsbuDebitTrx";
 
 export function mergeLsbuUe(lsbuRows: Row[], map: Map<string, number>): number {
@@ -351,6 +350,7 @@ export const ACQUIRER_0303_MAP: {
   { match: ["Nom Off Us"], transaksi: "52-Domestik (interchange)", field: "NILAI_TRANSAKSI", divideBy: 1_000_000 },
 ];
 
+/** Notebook fraud-per-bank: filter JENIS_KARTU exact, SUM all rows (per jenis fraud) per id. */
 export function mergeLsbuFraudBank(
   lsbuRows: Row[],
   map: Map<string, number>,
@@ -362,25 +362,12 @@ export function mergeLsbuFraudBank(
   for (const row of lsbuRows) {
     const jk = (pick(row, ["JENIS_KARTU"]) || "").trim();
     if (jk !== jenisKartu) {
-      const key = jenisKartu.toLowerCase();
-      if (
-        !jk
-          .toLowerCase()
-          .includes(
-            key.includes("kredit")
-              ? "kredit"
-              : key.includes("elektronik")
-                ? "elektronik"
-                : key.includes("atm") || key.includes("debet")
-                  ? "atm"
-                  : "___"
-          )
-      )
-        continue;
+      const code = jenisKartu.slice(0, 3);
+      if (!jk.startsWith(code)) continue;
     }
     const id = idOf(row);
     if (!id) continue;
-    const v = num(row, [valueField]) / divideBy;
+    const v = num(row, [valueField, "VOLUME_FRAUD_ACTUAL", "NOMINAL_FRAUD_ACTUAL"]) / divideBy;
     if (v !== 0) {
       map.set(id, (map.get(id) || 0) + v);
       added++;
