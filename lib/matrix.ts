@@ -211,7 +211,6 @@ export async function updateMesinAtmMatrix(opts: {
     );
   }
 
-  // ID baru hanya jika total != 0
   let appended = 0;
   for (const [id, vals] of byId.entries()) {
     if (vals[4] === 0) continue;
@@ -267,16 +266,13 @@ export async function updateEdcMatrix(opts: {
   headerBulanRow?: number;
   headerColRow?: number;
   dataStartRow?: number;
-}): Promise<{ written: number; appended: number; mode: string; sheet?: string; matched?: number; sourceIds?: number }> {
+}): Promise<{ written: number; appended: number; mode: string; sheet?: string; matched?: number; sourceIds?: number; col?: number; dataStart?: number }> {
   const {
     spreadsheetId,
     sheetName,
     monthLabel,
     rows,
     valueField = "expr_1",
-    headerBulanRow = 3,
-    headerColRow = 4,
-    dataStartRow = 5,
   } = opts;
 
   const aliases = EDC_SHEET_ALIASES[sheetName] || [sheetName];
@@ -291,12 +287,28 @@ export async function updateEdcMatrix(opts: {
     })
   );
   const sheetValues = res.data.values || [];
-  if (sheetValues.length < headerColRow) {
+  if (sheetValues.length < 3) {
     throw new Error(`Sheet ${resolved} terlalu pendek`);
   }
 
-  const subHeaders = sheetValues[headerColRow - 1].map((h) => String(h ?? ""));
-  const bulanRow = (sheetValues[headerBulanRow - 1] || []).map((h) => String(h ?? ""));
+  // Detect layout:
+  // A) Dual-header (Debet/Kredit): row3=month, row4=Open Loop|Close Loop|Total, data from row5
+  // B) Single-header (UE/Gabungan notebook): row3 has OPEN_LOOP/No, data from row4
+  const row3 = (sheetValues[2] || []).map((h) => String(h ?? "").trim());
+  const row4 = (sheetValues[3] || []).map((h) => String(h ?? "").trim());
+
+  const subHeaderTokens = new Set(
+    ["open loop", "close loop", "total", "open_loop", "close_loop", "opening", "closing"]
+  );
+  const row4LooksLikeSub = row4.some((h) =>
+    subHeaderTokens.has(h.toLowerCase())
+  );
+  const headerBulanRow = 3;
+  const headerColRow = row4LooksLikeSub ? 4 : 3;
+  const dataStartRow = row4LooksLikeSub ? 5 : 4;
+
+  const bulanRow = row3;
+  const subHeaders = row4LooksLikeSub ? row4 : row3;
 
   const byId = new Map<string, number[]>();
   for (const r of rows) {
@@ -307,6 +319,7 @@ export async function updateEdcMatrix(opts: {
       .toUpperCase();
     if (status === "OPEN LOOP" || status === "OPEN") status = "OL";
     if (status === "CLOSE LOOP" || status === "CLOSE" || status === "CLOSED") status = "CL";
+    if (!status) status = "OL";
     const val = Number(
       String(
         pick(r, [
@@ -335,23 +348,47 @@ export async function updateEdcMatrix(opts: {
   } else if (subHeaders.includes(monthLabel)) {
     startCol0 = subHeaders.indexOf(monthLabel);
   } else {
-    startCol0 = Math.max(subHeaders.length, bulanRow.length);
-    await withRetry(() =>
-      sheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${headerBulanRow}`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: { values: [[monthLabel]] },
-      })
-    );
-    await withRetry(() =>
-      sheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${headerColRow}`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: { values: [EDC_SUB] },
-      })
-    );
+    // Notebook style: find last empty column
+    const dataProbe = sheetValues.slice(dataStartRow - 1);
+    let lastEmpty = Math.max(bulanRow.length, subHeaders.length, 1);
+    for (let col = Math.max(bulanRow.length, subHeaders.length, 30); col >= 1; col--) {
+      const allEmpty = dataProbe.every((row) => {
+        const v = row?.[col];
+        return v === undefined || v === null || String(v).trim() === "";
+      });
+      if (allEmpty) lastEmpty = col;
+      else break;
+    }
+    startCol0 = lastEmpty;
+    if (row4LooksLikeSub) {
+      await withRetry(() =>
+        sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${headerBulanRow}`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [[monthLabel]] },
+        })
+      );
+      await withRetry(() =>
+        sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${headerColRow}`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [EDC_SUB] },
+        })
+      );
+    } else {
+      await withRetry(() =>
+        sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${headerBulanRow}`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: {
+            values: [[`${monthLabel} OL`, `${monthLabel} CL`, `${monthLabel} Total`]],
+          },
+        })
+      );
+    }
   }
 
   const dataRows = sheetValues.slice(dataStartRow - 1);
@@ -361,6 +398,11 @@ export async function updateEdcMatrix(opts: {
   for (const row of dataRows) {
     const raw = row?.[0];
     if (raw === undefined || raw === null || String(raw).trim() === "") {
+      matrix.push([0, 0, 0]);
+      continue;
+    }
+    const idStr = String(raw).trim();
+    if (/^total$/i.test(idStr)) {
       matrix.push([0, 0, 0]);
       continue;
     }
@@ -381,7 +423,6 @@ export async function updateEdcMatrix(opts: {
     );
   }
 
-  // ID baru hanya jika total != 0
   let appended = 0;
   for (const [id, vals] of byId.entries()) {
     if (vals[2] === 0) continue;
@@ -408,6 +449,8 @@ export async function updateEdcMatrix(opts: {
     appended,
     matched,
     sourceIds: byId.size,
+    col: startCol0 + 1,
+    dataStart: dataStartRow,
     mode: "matrix-edc",
     sheet: resolved,
   };
