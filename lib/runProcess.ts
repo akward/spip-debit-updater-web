@@ -1,3 +1,1 @@
-import { NextRequest, NextResponse } from "next/server";
-// FILE TOO LONG - use path
-export async function runProcess() { return null; }
+PLACEHOLDER_REPLACE_WITH_FULL_FILE
