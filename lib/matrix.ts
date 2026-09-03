@@ -132,7 +132,7 @@ export async function updateMesinAtmMatrix(opts: {
   const res = await withRetry(() =>
     sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${qSheet(resolved)}!A1:AZ5000`,
+      range: `${qSheet(resolved)}!A1:ZZ5000`,
       majorDimension: "ROWS",
     })
   );
@@ -280,10 +280,11 @@ export async function updateEdcMatrix(opts: {
   const resolved = await resolveSheetTitle(spreadsheetId, sheetName, aliases);
 
   const sheets = await getSheetsClient();
+  // CRITICAL: UE sheets have 200+ columns; AZ only covers col 52
   const res = await withRetry(() =>
     sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${qSheet(resolved)}!A1:AZ5000`,
+      range: `${qSheet(resolved)}!A1:ZZ5000`,
       majorDimension: "ROWS",
     })
   );
@@ -374,17 +375,26 @@ export async function updateEdcMatrix(opts: {
     return out;
   };
 
+  const prevLabel = monthBefore(monthLabel);
   let lastOtherMonth = -1;
+  let prevExact = -1;
   for (let i = 0; i < bulanRow.length; i++) {
     const h = bulanRow[i];
     if (!h) continue;
     if (h === monthLabel || h.startsWith(monthLabel + " ")) continue;
+    if (prevLabel && (h === prevLabel || h.startsWith(prevLabel + " "))) {
+      prevExact = i;
+    }
     if (isMonthHeader(h)) lastOtherMonth = i;
   }
 
   const existingTargets = findAllMonthIdx(bulanRow, monthLabel);
   const sequential =
-    lastOtherMonth >= 0 ? lastOtherMonth + 3 : Math.max(bulanRow.length, 3);
+    prevExact >= 0
+      ? prevExact + 3
+      : lastOtherMonth >= 0
+        ? lastOtherMonth + 3
+        : Math.max(bulanRow.length, 3);
 
   const targetCols = new Set<number>();
   for (const t of existingTargets) targetCols.add(t);
