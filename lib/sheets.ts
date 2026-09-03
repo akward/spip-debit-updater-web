@@ -242,39 +242,13 @@ export async function updateMonthColumn(opts: {
     );
   }
 
-  const existing = new Set(
-    dataRows
-      .map((r) => normalizeId(r?.[kIdx] ?? ""))
-      .filter(Boolean)
-  );
-  const toAppend: (string | number)[][] = [];
-  for (const [id, val] of valuesById.entries()) {
-    if (val <= 0) continue;
-    const nid = normalizeId(id);
-    if (existing.has(nid)) continue;
-    const row: (string | number)[] = Array(Math.max(headers.length, colIndex + 1)).fill(
-      ""
-    );
-    row[kIdx] = nid;
-    row[colIndex] = val;
-    toAppend.push(row);
-  }
-  if (toAppend.length) {
-    await withRetry(() =>
-      sheets.spreadsheets.values.append({
-        spreadsheetId,
-        range: `'${effectiveName.replace(/'/g, "''")}'!A${dataStartRow}`,
-        valueInputOption: "USER_ENTERED",
-        insertDataOption: "INSERT_ROWS",
-        requestBody: { values: toAppend },
-      })
-    );
-  }
+  // Rule: ID baru tidak ditambahkan (hanya update baris yang sudah ada di sheet)
+  const appended = 0;
 
   await sleep(700);
   return {
     written,
-    appended: toAppend.length,
+    appended,
     column: colIndex + 1,
     mode: "write",
   };
