@@ -1,6 +1,7 @@
 import { getSheetsClient } from "./sheets";
 import type { Row } from "./parse";
 import { normalizeId } from "./parse";
+import { monthBefore, isMonthHeader } from "./months";
 
 function colToA1(col: number): string {
   let n = col;
@@ -145,7 +146,7 @@ export async function updateMesinAtmMatrix(opts: {
 
   const byId = new Map<string, number[]>();
   for (const r of rows) {
-    const id = normalizeId(pick(r, ["idpelapor", "SANDI_PELAPOR"]) || "");
+    const id = normalizeId(pick(r, ["idpelapor", "SANDI_PELAPOR"]) || ""));
     if (!id) continue;
     const jenis = String(pick(r, ["jenismesin", "jenis_mesin"]) || "ACMAT")
       .trim()
@@ -291,9 +292,6 @@ export async function updateEdcMatrix(opts: {
     throw new Error(`Sheet ${resolved} terlalu pendek`);
   }
 
-  // Detect layout:
-  // A) Dual-header (Debet/Kredit): row3=month, row4=Open Loop|Close Loop|Total, data from row5
-  // B) Single-header (UE/Gabungan notebook): row3 has OPEN_LOOP/No, data from row4
   const row3 = (sheetValues[2] || []).map((h) => String(h ?? "").trim());
   const row4 = (sheetValues[3] || []).map((h) => String(h ?? "").trim());
 
@@ -342,24 +340,68 @@ export async function updateEdcMatrix(opts: {
     arr[2] = arr[0] + arr[1];
   }
 
-  let startCol0: number;
-  if (bulanRow.includes(monthLabel)) {
-    startCol0 = bulanRow.indexOf(monthLabel);
-  } else if (subHeaders.includes(monthLabel)) {
-    startCol0 = subHeaders.indexOf(monthLabel);
-  } else {
-    // Notebook style: find last empty column
-    const dataProbe = sheetValues.slice(dataStartRow - 1);
-    let lastEmpty = Math.max(bulanRow.length, subHeaders.length, 1);
-    for (let col = Math.max(bulanRow.length, subHeaders.length, 30); col >= 1; col--) {
-      const allEmpty = dataProbe.every((row) => {
-        const v = row?.[col];
-        return v === undefined || v === null || String(v).trim() === "";
-      });
-      if (allEmpty) lastEmpty = col;
-      else break;
+  function findMonthStart(headers: string[], label: string): number {
+    const idxs: number[] = [];
+    headers.forEach((h, i) => {
+      if (h === label || h.startsWith(label + " ")) idxs.push(i);
+    });
+    if (idxs.length === 1) return idxs[0];
+    if (idxs.length > 1) {
+      let best = idxs[0];
+      let bestScore = -1;
+      for (const i of idxs) {
+        let score = 0;
+        for (let d = 1; d <= 6; d++) {
+          if (i - d >= 0 && isMonthHeader(headers[i - d])) score += 2;
+          if (i + d < headers.length && isMonthHeader(headers[i + d])) score += 1;
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          best = i;
+        }
+      }
+      return best;
     }
-    startCol0 = lastEmpty;
+    return -1;
+  }
+
+  let startCol0: number;
+  const prevLabel = monthBefore(monthLabel);
+  const existingIdx = findMonthStart(bulanRow, monthLabel);
+  const existingSub = findMonthStart(subHeaders, monthLabel);
+
+  // Priority: sequential after previous month (Juli → Agustus)
+  if (prevLabel && bulanRow.includes(prevLabel)) {
+    const prevIdx = bulanRow.indexOf(prevLabel);
+    const sequential = prevIdx + 3;
+    if (existingIdx >= 0 && Math.abs(existingIdx - sequential) <= 3) {
+      startCol0 = existingIdx;
+    } else {
+      startCol0 = sequential;
+    }
+  } else if (prevLabel && subHeaders.includes(prevLabel)) {
+    startCol0 = subHeaders.indexOf(prevLabel) + 3;
+  } else if (existingIdx >= 0) {
+    startCol0 = existingIdx;
+  } else if (existingSub >= 0) {
+    startCol0 = existingSub;
+  } else {
+    const dataProbe = sheetValues.slice(dataStartRow - 1);
+    let lastFilled = 0;
+    for (let col = 0; col < Math.max(bulanRow.length, subHeaders.length, 80); col++) {
+      const hasData = dataProbe.some((row) => {
+        const v = row?.[col];
+        return v !== undefined && v !== null && String(v).trim() !== "";
+      });
+      if (hasData) lastFilled = col;
+    }
+    startCol0 = lastFilled + 1;
+  }
+
+  const needHeader =
+    bulanRow[startCol0] !== monthLabel &&
+    !String(bulanRow[startCol0] || "").startsWith(monthLabel);
+  if (needHeader) {
     if (row4LooksLikeSub) {
       await withRetry(() =>
         sheets.spreadsheets.values.update({
@@ -391,7 +433,13 @@ export async function updateEdcMatrix(opts: {
     }
   }
 
-  const dataRows = sheetValues.slice(dataStartRow - 1);
+  const forceRow4 =
+    /uang elektronik|gabungan/i.test(sheetName) &&
+    row4.length > 0 &&
+    /^\d+/.test(String(row4[0] || "").replace(/\.0$/, ""));
+  const effectiveDataStart = forceRow4 ? 4 : dataStartRow;
+
+  const dataRows = sheetValues.slice(effectiveDataStart - 1);
   const matrix: number[][] = [];
   const existing = new Set<string>();
 
@@ -416,7 +464,7 @@ export async function updateEdcMatrix(opts: {
     await withRetry(() =>
       sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${dataStartRow}:${colToA1(startCol0 + 3)}${dataStartRow + matrix.length - 1}`,
+        range: `${qSheet(resolved)}!${colToA1(startCol0 + 1)}${effectiveDataStart}:${colToA1(startCol0 + 3)}${effectiveDataStart + matrix.length - 1}`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: matrix },
       })
@@ -433,7 +481,7 @@ export async function updateEdcMatrix(opts: {
     await withRetry(() =>
       sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: `${qSheet(resolved)}!A${dataStartRow}`,
+        range: `${qSheet(resolved)}!A${effectiveDataStart}`,
         valueInputOption: "USER_ENTERED",
         insertDataOption: "INSERT_ROWS",
         requestBody: { values: [newRow] },
@@ -450,7 +498,7 @@ export async function updateEdcMatrix(opts: {
     matched,
     sourceIds: byId.size,
     col: startCol0 + 1,
-    dataStart: dataStartRow,
+    dataStart: effectiveDataStart,
     mode: "matrix-edc",
     sheet: resolved,
   };
