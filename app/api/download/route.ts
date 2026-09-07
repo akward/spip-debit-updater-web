@@ -6,16 +6,14 @@ import { GROUPS } from "@/lib/tasks";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-/**
- * Resolve spreadsheet ID for a group.
- * Acquirer has 2 books:
- *   book=tahun     → SHEET_ACQUIRER_EDC / SHEET_ACQUIRER_TAHUN (EDC + Merchant matrix)
- *   book=transaksi → SHEET_ACQUIRER_TRX (Vol/Nom On Us, Off Us, Internasional)
- */
 function spreadsheetIdForGroup(
   group: string,
   book?: string | null
 ): string | undefined {
+  if (group === "spasial_atm") return process.env.SHEET_SPASIAL_ATM || undefined;
+  if (group === "spasial_ue") return process.env.SHEET_SPASIAL_UE || undefined;
+  if (group === "spasial_kk") return process.env.SHEET_SPASIAL_KK || undefined;
+
   if (group === "acquirer") {
     const b = (book || "").toLowerCase().trim();
     if (b === "tahun" || b === "edc" || b === "matrix") {
@@ -28,7 +26,6 @@ function spreadsheetIdForGroup(
     if (b === "transaksi" || b === "trx" || b === "transaction") {
       return process.env.SHEET_ACQUIRER_TRX || undefined;
     }
-    // default acquirer download → transaksi (most sheets)
     return (
       process.env.SHEET_ACQUIRER_TRX ||
       process.env.SHEET_ACQUIRER_EDC ||
@@ -42,11 +39,6 @@ function spreadsheetIdForGroup(
   return process.env[jobs[0].spreadsheetEnv];
 }
 
-/**
- * GET /api/download?group=debit&format=xlsx
- * GET /api/download?group=acquirer&book=tahun&format=xlsx
- * GET /api/download?group=acquirer&book=transaksi&format=xlsx
- */
 export async function GET(req: NextRequest) {
   try {
     const group = req.nextUrl.searchParams.get("group") || "debit";
@@ -59,7 +51,9 @@ export async function GET(req: NextRequest) {
       const hint =
         group === "acquirer"
           ? " Set SHEET_ACQUIRER_EDC (atau SHEET_ACQUIRER_TAHUN) dan SHEET_ACQUIRER_TRX."
-          : "";
+          : group.startsWith("spasial_")
+            ? " Set SHEET_SPASIAL_ATM / SHEET_SPASIAL_UE / SHEET_SPASIAL_KK."
+            : "";
       return NextResponse.json(
         {
           ok: false,
@@ -84,7 +78,6 @@ export async function GET(req: NextRequest) {
 
     const bookSuffix = book ? `_${book}` : "";
 
-    // Metadata only
     if (!format && !sheet) {
       return NextResponse.json({
         ok: true,
@@ -99,7 +92,6 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Single tab CSV (optional legacy)
     if (sheet && format !== "xlsx") {
       const safeSheet = sheet.replace(/'/g, "''");
       const res = await sheetsApi.spreadsheets.values.get({
@@ -123,7 +115,6 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Whole spreadsheet → one XLSX file
     const wb = XLSX.utils.book_new();
     const tabs = titles.length
       ? titles
@@ -139,8 +130,7 @@ export async function GET(req: NextRequest) {
         });
         const rows = (res.data.values || []) as string[][];
         const ws = XLSX.utils.aoa_to_sheet(rows.length ? rows : [["(kosong)"]]);
-        const short = title.slice(0, 31);
-        XLSX.utils.book_append_sheet(wb, ws, short);
+        XLSX.utils.book_append_sheet(wb, ws, title.slice(0, 31));
       } catch {
         const ws = XLSX.utils.aoa_to_sheet([["(gagal baca tab)", title]]);
         XLSX.utils.book_append_sheet(wb, ws, title.slice(0, 31));
