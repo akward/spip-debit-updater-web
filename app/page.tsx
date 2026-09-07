@@ -50,6 +50,26 @@ const GROUPS = [
     lsbu: null,
     lsbuNote: "Tanpa LSBU",
   },
+  {
+    id: "spasial_atm",
+    title: "Spasial ATM",
+    lsbu: "LSBU_VW_FORMA0302.xlsx",
+    lsbuNote:
+      "File Spasial (.xlsx) per metrik + LSBU 0302 · baris=kode kota 4 digit · sheet=bulan",
+  },
+  {
+    id: "spasial_ue",
+    title: "Spasial UE",
+    lsbu: "LSBU_VW_FORMA0302.xlsx",
+    lsbuNote:
+      "File Spasial UE (.xlsx) + LSBU 0302 · KARTU_ELEKTRONIK · sheet=bulan",
+  },
+  {
+    id: "spasial_kk",
+    title: "Spasial KK",
+    lsbu: null,
+    lsbuNote: "File Spasial KK (.xlsx) · tanpa LSBU (sesuai notebook)",
+  },
 ];
 
 const DOWNLOAD_ITEMS: { id: string; title: string; href: string }[] = [
@@ -73,6 +93,9 @@ const DOWNLOAD_ITEMS: { id: string; title: string; href: string }[] = [
     href: "/api/download?group=fraud_penyebab&format=xlsx",
   },
   { id: "prop_channel", title: "Prop Channel", href: "/api/download?group=prop_channel&format=xlsx" },
+  { id: "spasial_atm", title: "Spasial ATM", href: "/api/download?group=spasial_atm&format=xlsx" },
+  { id: "spasial_ue", title: "Spasial UE", href: "/api/download?group=spasial_ue&format=xlsx" },
+  { id: "spasial_kk", title: "Spasial KK", href: "/api/download?group=spasial_kk&format=xlsx" },
 ];
 
 type ProcessResponse = {
@@ -169,6 +192,7 @@ export default function HomePage() {
   const [group, setGroup] = useState("debit");
   const [files, setFiles] = useState<FileList | null>(null);
   const [lsbuFiles, setLsbuFiles] = useState<FileList | null>(null);
+  const [spatialFiles, setSpatialFiles] = useState<FileList | null>(null);
   const [monthLabel, setMonthLabel] = useState("");
   const [dryRun, setDryRun] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -195,6 +219,8 @@ export default function HomePage() {
       if (files?.length) Array.from(files).forEach((f) => fd.append("files", f));
       if (lsbuFiles?.length)
         Array.from(lsbuFiles).forEach((f) => fd.append("lsbu", f));
+      if (spatialFiles?.length)
+        Array.from(spatialFiles).forEach((f) => fd.append("spatial", f));
 
       const res = await fetch("/api/process", {
         method: "POST",
@@ -366,6 +392,17 @@ export default function HomePage() {
                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 multiple
                 onChange={(e) => setLsbuFiles(e.target.files)}
+                style={{ display: "block", marginTop: 6 }}
+              />
+            </label>
+
+            <label>
+              File Spasial (.xlsx) — multi file (ATM/UE/KK Spasial)
+              <input
+                type="file"
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                multiple
+                onChange={(e) => setSpatialFiles(e.target.files)}
                 style={{ display: "block", marginTop: 6 }}
               />
             </label>
