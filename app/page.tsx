@@ -265,8 +265,8 @@ export default function HomePage() {
     <main className="container">
       <header className="header">
         <div>
-          <h1>SPIP Debit Updater</h1>
-          <p>Update data laporan SPIP ke Google Spreadsheet dari file CSV dan LSBU.</p>
+          <h1>Aplikasi Update SPIP</h1>
+          <p>Update data laporan SPIP.</p>
         </div>
       </header>
 
@@ -494,7 +494,7 @@ ok/copy: {log.summary.ok}/{log.summary.total} · error:{" "}
         </table>
       </section>
 
-      <footer className="footer">SPIP Debit Updater</footer>
+      <footer className="footer">Aplikasi Update SPIP</footer>
     </main>
   );
 }
