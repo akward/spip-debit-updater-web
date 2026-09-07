@@ -181,12 +181,17 @@ function aggregateSpatial(
   if (task.mode === "mesin") {
     for (const r of rows) {
       const key = cleanKey(
-        pickKeyCol(r, task.spKey) ?? r["lokasimesin"] ?? r["lokasimesin"]
+        pickKeyCol(r, task.spKey) ?? r["lokasimesin"] ?? r["LOKASIMESIN"]
       );
       if (key === "n/a") continue;
-      const jenis = String(r["jenismesin"] ?? r["jenismesin"] ?? "").toUpperCase();
+      const jenis = String(
+        r["jenismesin"] ?? r["JENISMESIN"] ?? r["jenis_mesin"] ?? ""
+      )
+        .toUpperCase()
+        .trim();
       const v = num(r["expr_1"] ?? r["EXPR_1"]);
-      if (mesinTypes.includes(jenis) || !jenis) {
+      // notebook: hanya ACMAC + ACMAT + ACMCD + ACMNT
+      if (mesinTypes.includes(jenis)) {
         map.set(key, (map.get(key) || 0) + v);
       }
     }
@@ -203,7 +208,11 @@ function aggregateSpatial(
       v = task.mode === "kartu" || task.mode === "instrumen" ? e1 - e2 : e1 || e2;
     } else if (task.mode === "vol") {
       v = num(r["expr_1"] ?? r["EXPR_1"]);
-    } else if (task.mode === "nom" || task.mode === "nom_juta") {
+    } else if (task.mode === "nom") {
+      // ATM notebook: expr_2 / 1e6 di tahap spasial (sebelum merge LSBU)
+      v = num(r["expr_2"] ?? r["EXPR_2"]) / 1_000_000;
+    } else if (task.mode === "nom_juta") {
+      // UE notebook: sum raw dulu, bagi 1e6 di akhir
       v = num(r["expr_2"] ?? r["EXPR_2"]);
     }
     map.set(key, (map.get(key) || 0) + v);
@@ -402,7 +411,9 @@ export async function processSpasialGroup(opts: {
       for (const k of keys) {
         if (!k || k === "n/a") continue;
         let total = (spMap.get(k) || 0) + (lsbuMap.get(k) || 0);
-        if (task.mode === "nom" || task.mode === "nom_juta") {
+        // nom (ATM): sudah /1e6 di aggregateSpatial
+        // nom_juta (UE): (spasial + LSBU) / 1e6 — notebook UE
+        if (task.mode === "nom_juta") {
           total = total / 1_000_000;
         }
         finals.set(k, total);
