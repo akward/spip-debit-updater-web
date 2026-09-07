@@ -52,6 +52,29 @@ const GROUPS = [
   },
 ];
 
+const DOWNLOAD_ITEMS: { id: string; title: string; href: string }[] = [
+  { id: "debit", title: "Debit / ATM", href: "/api/download?group=debit&format=xlsx" },
+  { id: "ue", title: "Uang Elektronik", href: "/api/download?group=ue&format=xlsx" },
+  { id: "kk", title: "Kartu Kredit", href: "/api/download?group=kk&format=xlsx" },
+  {
+    id: "acquirer_tahun",
+    title: "Acquirer Tahun",
+    href: "/api/download?group=acquirer&book=tahun&format=xlsx",
+  },
+  {
+    id: "acquirer_transaksi",
+    title: "Acquirer Transaksi",
+    href: "/api/download?group=acquirer&book=transaksi&format=xlsx",
+  },
+  { id: "fraud_bank", title: "Fraud per Bank", href: "/api/download?group=fraud_bank&format=xlsx" },
+  {
+    id: "fraud_penyebab",
+    title: "Fraud per Penyebab",
+    href: "/api/download?group=fraud_penyebab&format=xlsx",
+  },
+  { id: "prop_channel", title: "Prop Channel", href: "/api/download?group=prop_channel&format=xlsx" },
+];
+
 type ProcessResponse = {
   ok: boolean;
   error?: string;
@@ -474,7 +497,7 @@ ok/copy: {log.summary.ok}/{log.summary.total} · error:{" "}
             </tr>
           </thead>
           <tbody>
-            {GROUPS.map((g) => (
+            {DOWNLOAD_ITEMS.map((g) => (
               <tr key={g.id}>
                 <td>
                   <strong>{g.title}</strong>
@@ -482,7 +505,7 @@ ok/copy: {log.summary.ok}/{log.summary.total} · error:{" "}
                 <td>
                   <a
                     className="btn primary"
-                    href={`/api/download?group=${encodeURIComponent(g.id)}&format=xlsx`}
+                    href={g.href}
                     style={{ display: "inline-block", textDecoration: "none" }}
                   >
                     Unduh {g.title}
