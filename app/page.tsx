@@ -448,10 +448,10 @@ export default function HomePage() {
               {loading
                 ? dryRun
                   ? "Memeriksa…"
-                  : "Menulis ke Google Sheet…"
+                  : "Memperbarui data…"
                 : dryRun
                   ? "Cek mapping"
-                  : "Update Google Sheet"}
+                  : "Update Data"}
             </button>
 
             {loading && progress && (
