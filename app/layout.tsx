@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "SPIP Debit Updater",
-  description: "Panel kontrol update Google Sheets SPIP (Debit, UE, KK, Acquirer, Prop Channel)",
+  title: "Aplikasi Update SPIP",
+  description: "Update data laporan SPIP",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
