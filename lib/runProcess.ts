@@ -8,6 +8,7 @@ import {
   type LsbuKind,
 } from "@/lib/lsbu";
 import { processOneJob, isQuotaError, sleep } from "@/lib/processJobs";
+import { processSpasialGroup, spasialTasksForGroup } from "@/lib/spasial";
 
 export async function runProcess(req: NextRequest) {
   try {
@@ -19,15 +20,25 @@ export async function runProcess(req: NextRequest) {
     const monthLabel =
       (monthOverride && String(monthOverride).trim()) || previousMonthLabel();
 
-    const jobs = GROUPS[group];
-    if (!jobs) {
+    const isSpasial = group.startsWith("spasial_");
+    const jobs = isSpasial ? null : GROUPS[group];
+    if (!isSpasial && !jobs) {
       return NextResponse.json(
         { ok: false, error: `Group tidak didukung: ${group}` },
         { status: 400 }
       );
     }
+    if (isSpasial && !spasialTasksForGroup(group)) {
+      return NextResponse.json(
+        { ok: false, error: `Group spasial tidak didukung: ${group}` },
+        { status: 400 }
+      );
+    }
 
     const files = form.getAll("files").filter((f) => f instanceof File) as File[];
+    const spatialFiles = form
+      .getAll("spatial")
+      .filter((f) => f instanceof File && f.size > 0) as File[];
     const lsbuFiles = [...form.getAll("lsbu"), ...form.getAll("lsbu2")].filter(
       (f) => f instanceof File && f.size > 0
     ) as File[];
@@ -46,6 +57,110 @@ export async function runProcess(req: NextRequest) {
       parsed.push({ name: f.name, rows: parseCsvText(await f.text()) });
     }
 
+    if (isSpasial) {
+      const spatialBufs: { name: string; buf: ArrayBuffer }[] = [];
+      for (const f of spatialFiles.length ? spatialFiles : files) {
+        const name = f.name.toLowerCase();
+        if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+          spatialBufs.push({ name: f.name, buf: await f.arrayBuffer() });
+        }
+      }
+      const lsbuRows = lsbuBundles.flatMap((b) => b.rows);
+      const tasks = spasialTasksForGroup(group)!;
+
+      if (wantStream && !dryRun) {
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          async start(controller) {
+            const send = (obj: Record<string, unknown>) => {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)
+              );
+            };
+            try {
+              send({
+                type: "start",
+                group,
+                monthLabel,
+                dryRun,
+                totalJobs: tasks.length,
+                files: spatialBufs.map((p) => ({ name: p.name, rows: 0 })),
+                lsbu: lsbuBundles.map((b) => ({
+                  name: b.name,
+                  kind: b.kind,
+                  rows: b.rows.length,
+                })),
+              });
+              const out = await processSpasialGroup({
+                group,
+                monthLabel,
+                dryRun: false,
+                spatialFiles: spatialBufs,
+                lsbuRows,
+                onProgress: (msg, index, total) =>
+                  send({ type: "progress", index, total, job: msg, message: msg }),
+              });
+              for (let i = 0; i < out.results.length; i++) {
+                const r = out.results[i];
+                send({ type: "job", index: i + 1, total: out.results.length, ...r });
+              }
+              send({
+                type: "done",
+                ok: true,
+                group,
+                monthLabel,
+                dryRun: false,
+                summary: out.summary,
+                results: out.results,
+                files: spatialBufs.map((p) => ({ name: p.name, rows: 0 })),
+                lsbu: lsbuBundles.map((b) => ({
+                  name: b.name,
+                  kind: b.kind,
+                  rows: b.rows.length,
+                })),
+              });
+            } catch (e) {
+              send({
+                type: "error",
+                error: e instanceof Error ? e.message : String(e),
+              });
+            } finally {
+              controller.close();
+            }
+          },
+        });
+        return new NextResponse(stream, {
+          headers: {
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "Cache-Control": "no-cache, no-transform",
+            Connection: "keep-alive",
+          },
+        });
+      }
+
+      const out = await processSpasialGroup({
+        group,
+        monthLabel,
+        dryRun,
+        spatialFiles: spatialBufs,
+        lsbuRows,
+      });
+      return NextResponse.json({
+        ok: true,
+        group,
+        monthLabel,
+        dryRun,
+        summary: out.summary,
+        results: out.results,
+        files: spatialBufs.map((p) => ({ name: p.name, rows: 0 })),
+        lsbu: lsbuBundles.map((b) => ({
+          name: b.name,
+          kind: b.kind,
+          rows: b.rows.length,
+        })),
+      });
+    }
+
     if (wantStream && !dryRun) {
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
@@ -59,7 +174,7 @@ export async function runProcess(req: NextRequest) {
               group,
               monthLabel,
               dryRun,
-              totalJobs: jobs.length,
+              totalJobs: jobs!.length,
               files: parsed.map((p) => ({ name: p.name, rows: p.rows.length })),
               lsbu: lsbuBundles.map((b) => ({
                 name: b.name,
@@ -70,13 +185,13 @@ export async function runProcess(req: NextRequest) {
 
             const results: Record<string, unknown>[] = [];
             const gapMs = group === "acquirer" ? 1500 : 800;
-            for (let i = 0; i < jobs.length; i++) {
-              const job = jobs[i];
+            for (let i = 0; i < jobs!.length; i++) {
+              const job = jobs![i];
               if (i > 0) await sleep(gapMs);
               send({
                 type: "progress",
                 index: i + 1,
-                total: jobs.length,
+                total: jobs!.length,
                 job: job.name,
                 message: `Menulis ${job.sheetName}…`,
               });
@@ -88,7 +203,7 @@ export async function runProcess(req: NextRequest) {
                     send({
                       type: "progress",
                       index: i + 1,
-                      total: jobs.length,
+                      total: jobs!.length,
                       job: job.name,
                       message: `Retry ${attempt} (quota)… tunggu ${attempt * 20}s`,
                     });
@@ -114,7 +229,7 @@ export async function runProcess(req: NextRequest) {
                       break;
                     }
                     results.push(r);
-                    send({ type: "job", index: i + 1, total: jobs.length, ...r });
+                    send({ type: "job", index: i + 1, total: jobs!.length, ...r });
                   }
                   if (hitQuota && attempt < 3) continue;
                   if (hitQuota) {
@@ -127,7 +242,7 @@ export async function runProcess(req: NextRequest) {
                     send({
                       type: "job",
                       index: i + 1,
-                      total: jobs.length,
+                      total: jobs!.length,
                       job: job.name,
                       status: "error",
                       sheet: job.sheetName,
@@ -145,7 +260,7 @@ export async function runProcess(req: NextRequest) {
                       reason: e instanceof Error ? e.message : String(e),
                     };
                     results.push(err);
-                    send({ type: "job", index: i + 1, total: jobs.length, ...err });
+                    send({ type: "job", index: i + 1, total: jobs!.length, ...err });
                     done = true;
                   }
                 }
@@ -199,8 +314,8 @@ export async function runProcess(req: NextRequest) {
 
     const results: Record<string, unknown>[] = [];
     const gapMs = group === "acquirer" ? 1500 : 800;
-    for (let i = 0; i < jobs.length; i++) {
-      const job = jobs[i];
+    for (let i = 0; i < jobs!.length; i++) {
+      const job = jobs![i];
       if (i > 0 && !dryRun) await sleep(gapMs);
       let pushed = false;
       for (let attempt = 0; attempt < 4 && !pushed; attempt++) {
@@ -215,8 +330,7 @@ export async function runProcess(req: NextRequest) {
             lsbuByKind,
           });
           const quotaRow = rows.find(
-            (r) =>
-              r.status === "error" && isQuotaError(String(r.reason || ""))
+            (r) => r.status === "error" && isQuotaError(String(r.reason || ""))
           );
           if (quotaRow && attempt < 3) continue;
           results.push(...rows);
