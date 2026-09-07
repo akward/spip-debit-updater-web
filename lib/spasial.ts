@@ -23,6 +23,7 @@ export type SpasialTask = {
   spKey: string;
   mode: SpasialMode;
   valueCol?: string;
+  valueCols?: string[];
   lsbuCodes?: string[];
   lsbuCols?: string[];
 };
@@ -74,15 +75,72 @@ export const SPASIAL_UE_TASKS: SpasialTask[] = [
 ];
 
 export const SPASIAL_KK_TASKS: SpasialTask[] = [
-  { label: "Kartu Kredit", fileHints: ["jumlah_kk_beredar", "kk_beredar"], spKey: "kotakab", mode: "kk_sum" },
-  { label: "Outstanding", fileHints: ["nominal_outstanding", "outstanding"], spKey: "kotakab", mode: "col_juta", valueCol: "outstanding" },
-  { label: "NPL", fileHints: ["nominal_npl", "npl"], spKey: "kotakab", mode: "col_juta", valueCol: "npl" },
-  { label: "Vol Tunai", fileHints: ["transaksi_tunai_kk"], spKey: "lokasitransaksi", mode: "vol" },
-  { label: "Nom Tunai", fileHints: ["transaksi_tunai_kk"], spKey: "lokasitransaksi", mode: "nom" },
-  { label: "Vol Belanja", fileHints: ["transaksi_belanja_kk"], spKey: "lokasitransaksi", mode: "col_raw", valueCol: "sum(frekuensitransaksi)" },
-  { label: "Nom Belanja", fileHints: ["transaksi_belanja_kk"], spKey: "lokasitransaksi", mode: "col_juta", valueCol: "sum(nominaltransaksi)" },
-  { label: "Vol Bill Payment", fileHints: ["bill_payment_kk", "bill_payment"], spKey: "lokasitransaksi", mode: "col_raw", valueCol: "sum(frekuensitransaksi)" },
-  { label: "Nom Bill Payment", fileHints: ["bill_payment_kk", "bill_payment"], spKey: "lokasitransaksi", mode: "col_juta", valueCol: "sum(nominaltransaksi)" },
+  {
+    label: "Kartu Kredit",
+    fileHints: ["jumlah_kk_beredar", "jumlah_kk", "kk_beredar"],
+    spKey: "kotakab",
+    mode: "kk_sum",
+  },
+  {
+    label: "Outstanding",
+    fileHints: ["nominal_outstanding", "outstanding"],
+    spKey: "kotakab",
+    mode: "col_juta",
+    valueCol: "outstanding",
+    valueCols: ["outstanding", "expr_1", "expr_2"],
+  },
+  {
+    label: "NPL",
+    fileHints: ["nominal_npl", "npl"],
+    spKey: "kotakab",
+    mode: "col_juta",
+    valueCol: "npl",
+    valueCols: ["npl", "expr_1", "expr_2"],
+  },
+  {
+    label: "Vol Tunai",
+    fileHints: ["transaksi_tunai_kk", "tunai_kk"],
+    spKey: "lokasitransaksi",
+    mode: "vol",
+  },
+  {
+    label: "Nom Tunai",
+    fileHints: ["transaksi_tunai_kk", "tunai_kk"],
+    spKey: "lokasitransaksi",
+    mode: "nom",
+  },
+  {
+    label: "Vol Belanja",
+    fileHints: ["transaksi_belanja_kk", "belanja_kk"],
+    spKey: "lokasitransaksi",
+    mode: "col_raw",
+    valueCol: "sum(frekuensitransaksi)",
+    valueCols: ["sum(frekuensitransaksi)", "frekuensitransaksi", "expr_1", "volume"],
+  },
+  {
+    label: "Nom Belanja",
+    fileHints: ["transaksi_belanja_kk", "belanja_kk"],
+    spKey: "lokasitransaksi",
+    mode: "col_juta",
+    valueCol: "sum(nominaltransaksi)",
+    valueCols: ["sum(nominaltransaksi)", "nominaltransaksi", "expr_2", "nominal"],
+  },
+  {
+    label: "Vol Bill Payment",
+    fileHints: ["bill_payment_kk", "bill_payment", "transaksi_bill"],
+    spKey: "lokasitransaksi",
+    mode: "col_raw",
+    valueCol: "sum(frekuensitransaksi)",
+    valueCols: ["sum(frekuensitransaksi)", "frekuensitransaksi", "expr_1", "volume"],
+  },
+  {
+    label: "Nom Bill Payment",
+    fileHints: ["bill_payment_kk", "bill_payment", "transaksi_bill"],
+    spKey: "lokasitransaksi",
+    mode: "col_juta",
+    valueCol: "sum(nominaltransaksi)",
+    valueCols: ["sum(nominaltransaksi)", "nominaltransaksi", "expr_2", "nominal"],
+  },
 ];
 
 export function spasialTasksForGroup(group: string): SpasialTask[] | null {
@@ -166,16 +224,61 @@ function pickKeyCol(row: Record<string, unknown>, spKey: string): unknown {
   return undefined;
 }
 
+function normalizeColKey(s: string): string {
+  return s.toLowerCase().replace(/[\s_\-()]/g, "");
+}
+
 function pickValCol(row: Record<string, unknown>, colName: string): unknown {
-  const want = colName.toLowerCase().replace(/[\s_]/g, "");
+  const want = normalizeColKey(colName);
   for (const k of Object.keys(row)) {
-    if (k.toLowerCase().replace(/[\s_]/g, "") === want) return row[k];
+    if (normalizeColKey(k) === want) return row[k];
   }
+  let best: { k: string; score: number } | null = null;
   for (const k of Object.keys(row)) {
-    const kl = k.toLowerCase().replace(/[\s_]/g, "");
-    if (kl.includes(want) || want.includes(kl)) return row[k];
+    const kl = normalizeColKey(k);
+    if (!kl || kl.startsWith("col")) continue;
+    if (kl.includes(want) || want.includes(kl)) {
+      const score = Math.min(kl.length, want.length);
+      if (!best || score > best.score) best = { k, score };
+    }
   }
-  return undefined;
+  return best ? row[best.k] : undefined;
+}
+
+function resolveValue(
+  row: Record<string, unknown>,
+  task: SpasialTask
+): { value: number; usedCol: string | null } {
+  const candidates = [
+    ...(task.valueCols || []),
+    ...(task.valueCol ? [task.valueCol] : []),
+  ];
+  const seen = new Set<string>();
+  const list: string[] = [];
+  for (const c of candidates) {
+    const n = c.toLowerCase();
+    if (!seen.has(n)) {
+      seen.add(n);
+      list.push(c);
+    }
+  }
+  for (const c of list) {
+    const raw = pickValCol(row, c);
+    if (raw !== undefined && raw !== null && raw !== "") {
+      return { value: num(raw), usedCol: c };
+    }
+  }
+  if (task.mode === "col_raw" || task.mode === "vol") {
+    const e1 = row["expr_1"] ?? row["EXPR_1"];
+    if (e1 !== undefined && e1 !== null && e1 !== "")
+      return { value: num(e1), usedCol: "expr_1" };
+  }
+  if (task.mode === "col_juta" || task.mode === "nom") {
+    const e2 = row["expr_2"] ?? row["EXPR_2"];
+    if (e2 !== undefined && e2 !== null && e2 !== "")
+      return { value: num(e2), usedCol: "expr_2" };
+  }
+  return { value: 0, usedCol: null };
 }
 
 function aggregateSpatial(
@@ -205,11 +308,13 @@ function aggregateSpatial(
     } else if (task.mode === "nom") {
       v = num(r["expr_2"] ?? r["EXPR_2"]);
     } else if (task.mode === "col_raw" || task.mode === "col_juta") {
-      const col = task.valueCol || "expr_1";
-      v = num(pickValCol(r, col) ?? r[col] ?? r["expr_1"]);
+      v = resolveValue(r, task).value;
     } else if (task.mode === "reader") {
-      const col = task.valueCol || "jumlahreader";
-      v = num(pickValCol(r, col) ?? r["jumlahreader"] ?? r["expr_1"] ?? r["EXPR_1"]);
+      const resolved = resolveValue(r, {
+        ...task,
+        valueCols: [...(task.valueCols || []), "jumlahreader", "expr_1"],
+      });
+      v = resolved.value;
     }
 
     map.set(key, (map.get(key) || 0) + v);
@@ -374,9 +479,28 @@ export async function processSpasialGroup(opts: {
       const lsbuMap = aggregateLsbu(opts.lsbuRows, task);
 
       const labelClean = task.label.toLowerCase().replace(/[\s_\-]/g, "");
-      const colIdx = headersClean.findIndex(
-        (h) => h.includes(labelClean) || labelClean.includes(h)
-      );
+      let colIdx = headersClean.findIndex((h) => h === labelClean);
+      if (colIdx < 0)
+        colIdx = headersClean.findIndex(
+          (h) => h.includes(labelClean) || labelClean.includes(h)
+        );
+      if (colIdx < 0) {
+        const aliases: Record<string, string[]> = {
+          kartukredit: ["kartukredit", "jumlahkartukredit", "jumlahkk", "kk"],
+          outstanding: ["outstanding", "nilaioutstanding"],
+          npl: ["npl", "nilainpl"],
+          voltunai: ["voltunai", "volumetunai"],
+          nomtunai: ["nomtunai", "nominaltunai", "nilaitunai"],
+          volbelanja: ["volbelanja", "volumebelanja"],
+          nombelanja: ["nombelanja", "nominalbelanja", "nilaibelanja"],
+          volbillpayment: ["volbillpayment", "volbill", "billpayment", "volumebill"],
+          nombillpayment: ["nombillpayment", "nombill", "nominalbill", "nilaibill"],
+        };
+        const al = aliases[labelClean] || [];
+        colIdx = headersClean.findIndex((h) =>
+          al.some((a) => h.includes(a) || a.includes(h))
+        );
+      }
       if (colIdx < 0) {
         results.push({
           job: task.label,
@@ -397,7 +521,6 @@ export async function processSpasialGroup(opts: {
       for (const k of keys) {
         if (!k || k === "n/a") continue;
         let total = (spMap.get(k) || 0) + (lsbuMap.get(k) || 0);
-        // Notebook: nom & col_juta → (spatial + LSBU) / 1e6
         if (task.mode === "nom" || task.mode === "col_juta") {
           total = total / 1_000_000;
         }
