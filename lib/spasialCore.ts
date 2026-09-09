@@ -2,9 +2,9 @@
  * Browser + server safe Spasial aggregation (no Node-only APIs).
  * Used by client pre-parse and server fallback.
  *
- * Key mapping = Spasial KK (Google Sheet):
+ * Key mapping = notebook Spasial UE + KK Google Sheet:
  *   blank / "" / "0" / nan → "n/a" (also aliased as "0000")
- *   else 4-digit city code
+ *   else first-4 digits zfill (LSBU: str[:4].zfill(4))
  * Jumlah UE: sum(expr_1)-sum(expr_2) + LSBU; blank lokasi = expr saja (tanpa LSBU)
  */
 export type SpasialMode =
@@ -74,17 +74,21 @@ export function spasialEnvForGroup(group: string): string {
 export type Row = Record<string, unknown>;
 
 export function cleanKey(val: unknown): string {
-  // Pola Spasial KK (Google Sheet) + UE:
-  //   blank / "" / nan / "0" → "n/a"
-  //   kode kota → 4 digit (4 terakhir, zfill)
-  // Sheet & spatial pakai fungsi yang sama.
+  // Notebook:
+  //   LSBU KOTA: str[:4].zfill(4)  → 4 digit PERTAMA
+  //   spatial: fillna(0).astype(int).astype(str).str.zfill(4)
+  // Blank → "n/a"; non-blank → 4 digit (leading zero).
   const s = String(val ?? "").trim().toLowerCase();
   if (!s || s === "n/a" || s === "nan" || s === "0" || s === "-" || s.includes("n/a")) {
     return "n/a";
   }
-  const digits = s.replace(/\D/g, "");
+  // Buang desimal Excel (3171.0 → 3171) sebelum ambil digit
+  const beforeDot = String(val ?? "").trim().split(".")[0];
+  let digits = beforeDot.replace(/\D/g, "");
+  if (!digits) digits = s.replace(/\D/g, "");
   if (!digits || /^0+$/.test(digits)) return "n/a";
-  return digits.slice(-4).padStart(4, "0");
+  // 4 digit PERTAMA + pad (sama notebook LSBU)
+  return digits.slice(0, 4).padStart(4, "0");
 }
 
 function num(v: unknown): number {
@@ -261,29 +265,36 @@ export function aggregateSpatial(rows: Row[], task: SpasialTask): Record<string,
 export function aggregateLsbu(lsbuRows: Row[], task: SpasialTask): Record<string, number> {
   const map: Record<string, number> = {};
   if (!task.lsbuCodes?.length) return map;
-  const codes = new Set(task.lsbuCodes.map((c) => c.trim().toLowerCase().replace(/\s+$/, "")));
-  const cols = task.lsbuCols?.length
-    ? task.lsbuCols
-    : ["KARTU_ATM", "KARTU_ATM_DEBIT", "KARTU_ELEKTRONIK"];
+  // Notebook: exact match JENIS_DATA == '001-Jumlah Kartu'
+  const codes = task.lsbuCodes.map((c) =>
+    c.trim().toLowerCase().replace(/\s+/g, " ")
+  );
+  const cols = task.lsbuCols?.length ? task.lsbuCols : ["KARTU_ELEKTRONIK"];
 
   for (const r of lsbuRows) {
     const jd = String(r["JENIS_DATA"] ?? r["jenis_data"] ?? "")
       .trim()
       .toLowerCase()
-      .replace(/\s+$/, "");
-    const match =
-      codes.has(jd) || [...codes].some((c) => jd.startsWith(c) || c.startsWith(jd));
+      .replace(/\s+/g, " ");
+    // Notebook: JENIS_DATA == '001-Jumlah Kartu'
+    const match = codes.some((c) => jd === c || jd.startsWith(c) || c.startsWith(jd));
     if (!match) continue;
+    // Notebook: KOTA str[:4].zfill(4) via cleanKey
     const kota = cleanKey(r["KOTA"] ?? r["kota"] ?? "");
+    if (!kota || kota === "n/a") continue; // LSBU blank kota tidak digabung ke spatial blank
     let sum = 0;
     for (const c of cols) {
-      sum += num(r[c] ?? r[c.toLowerCase()] ?? r[c.toUpperCase()]);
-    }
-    if (sum === 0) {
-      for (const [k, v] of Object.entries(r)) {
-        const nk = k.toLowerCase();
-        if (nk.includes("kartu") || nk.includes("jumlah") || nk.includes("nilai")) {
-          sum += num(v);
+      // only explicit columns — no fallback summing other "kartu" columns
+      const v = r[c] ?? r[c.toLowerCase()] ?? r[c.toUpperCase()];
+      if (v !== undefined && v !== null && v !== "") {
+        sum += num(v);
+      } else {
+        const want = c.toLowerCase().replace(/[\s_]/g, "");
+        for (const [k, val] of Object.entries(r)) {
+          if (k.toLowerCase().replace(/[\s_]/g, "") === want) {
+            sum += num(val);
+            break;
+          }
         }
       }
     }
