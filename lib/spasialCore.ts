@@ -88,11 +88,6 @@ export const SPASIAL_ATM_TASKS: SpasialTask[] = [
     fileHints: ["Transaksi_Pembayaran_ATM_Debet_(Spasial)", "Transaksi_Pembayaran_ATM_Debet"],
     spKey: "lokasitransaksi",
     mode: "vol",
-    lsbuCodes: [
-      "091-Volume transaksi pembayaran internasional",
-      "092-Volume transaksi pembayaran domestik",
-    ],
-    lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"],
   },
   {
     label: "Vol Interbank",
