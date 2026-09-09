@@ -29,12 +29,21 @@ export type SpasialTask = {
 };
 
 export const SPASIAL_ATM_TASKS: SpasialTask[] = [
-  { label: "Jumlah Kartu", fileHints: ["jumlah_kartu", "kartu_atm"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["001-Jumlah Kartu"], lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"] },
-  { label: "Mesin ATM", fileHints: ["mesin_atm", "jumlah_mesin"], spKey: "lokasimesin", mode: "mesin", lsbuCodes: ["121-Jumlah Mesin ATM"] },
-  { label: "Vol Tarik Tunai", fileHints: ["tarik_tunai", "transaksi_tunai"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["098-Volume transaksi tarik tunai"] },
-  { label: "Nom Tarik Tunai", fileHints: ["tarik_tunai", "transaksi_tunai"], spKey: "lokasitransaksi", mode: "nom", lsbuCodes: ["118-Nominal transaksi tarik tunai"] },
-  { label: "Vol Transfer", fileHints: ["transfer"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["100-Volume transaksi transfer"] },
-  { label: "Nom Transfer", fileHints: ["transfer"], spKey: "lokasitransaksi", mode: "nom", lsbuCodes: ["120-Nominal transaksi transfer"] },
+  { label: "Kartu ATM", fileHints: ["Jumlah_Kartu_ATM_Beredar", "kartu_atm", "Jumlah_Kartu_ATM"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["001-Jumlah Kartu"], lsbuCols: ["KARTU_ATM"] },
+  { label: "Kartu Debet", fileHints: ["Jumlah_Kartu_Debet_Beredar", "kartu_debet", "kartu_debit", "Jumlah_Kartu_Debet"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["001-Jumlah Kartu"], lsbuCols: ["KARTU_ATM_DEBIT"] },
+  { label: "Mesin ATM", fileHints: ["Jumlah_Mesin_ATM", "mesin_atm", "jumlah_mesin"], spKey: "lokasimesin", mode: "mesin", lsbuCodes: ["121-Jumlah Mesin ATM"], lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"] },
+  { label: "Vol Tunai", fileHints: ["Transaksi_Tunai_ATM_Debet", "Transaksi_Tunai"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["081-Volume transaksi tarik tunai internasional", "082-Volume transaksi tarik tunai domestik"], lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"] },
+  { label: "Vol SetorTunai", fileHints: ["Transaksi_Setor_Tunai_ATM_Debet", "setor_tunai", "setortunai"], spKey: "lokasitransaksi", mode: "vol", lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"] },
+  { label: "Vol Belanja", fileHints: ["Transaksi_Belanja_ATM_Debet", "belanja"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["086-Volume transaksi belanja internasional", "087-Volume transaksi belanja domestik"], lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"] },
+  { label: "Vol Pembayaran", fileHints: ["Transaksi_Pembayaran_ATM_Debet", "pembayaran"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["091-Volume transaksi pembayaran internasional", "092-Volume transaksi pembayaran domestik"], lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"] },
+  { label: "Vol Interbank", fileHints: ["Transfer_Interbank_ATM_Debet", "interbank"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["091-Volume transaksi transfer interbank"], lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"] },
+  { label: "Vol Antarbank", fileHints: ["Transfer_Antarbank_ATM_Debet", "antarbank"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["092-Volume transaksi transfer antarbank"], lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"] },
+  { label: "Nom Tunai", fileHints: ["Transaksi_Tunai_ATM_Debet", "Transaksi_Tunai"], spKey: "lokasitransaksi", mode: "nom", lsbuCodes: ["101-Nominal transaksi tarik tunai internasional", "102-Nominal transaksi tarik tunai domestik"], lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"] },
+  { label: "Nom Setor Tunai", fileHints: ["Transaksi_Setor_Tunai_ATM_Debet", "setor_tunai", "setortunai"], spKey: "lokasitransaksi", mode: "nom", lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"] },
+  { label: "Nom Belanja", fileHints: ["Transaksi_Belanja_ATM_Debet", "belanja"], spKey: "lokasitransaksi", mode: "nom", lsbuCodes: ["106-Nominal transaksi belanja internasional", "107-Nominal transaksi belanja domestik"], lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"] },
+  { label: "Nom Pembayaran", fileHints: ["Transaksi_Pembayaran_ATM_Debet", "pembayaran"], spKey: "lokasitransaksi", mode: "nom", lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"] },
+  { label: "Nom Interbank", fileHints: ["Transfer_Interbank_ATM_Debet", "interbank"], spKey: "lokasitransaksi", mode: "nom", lsbuCodes: ["111-Nominal transaksi transfer interbank"], lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"] },
+  { label: "Nom Antarbank", fileHints: ["Transfer_Antarbank_ATM_Debet", "antarbank"], spKey: "lokasitransaksi", mode: "nom", lsbuCodes: ["112-Nominal transaksi transfer antarbank"], lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"] },
 ];
 
 export const SPASIAL_UE_TASKS: SpasialTask[] = [
