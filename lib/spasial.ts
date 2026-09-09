@@ -10,7 +10,6 @@ import {
   aggregateSpatial,
   aggregateLsbu,
   finalValues,
-  type SpasialTask,
   type Row,
 } from "@/lib/spasialCore";
 import * as XLSX from "xlsx";
