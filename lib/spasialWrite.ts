@@ -28,11 +28,9 @@ async function ensureMonthSheet(
     titles.find((t) => /\d{4}/.test(t)) ||
     titles[0];
   if (!template) throw new Error("Spreadsheet Spasial kosong (tidak ada sheet).");
-
   const src = (meta.data.sheets || []).find((s) => s.properties?.title === template);
   const sheetId = src?.properties?.sheetId;
   if (sheetId == null) throw new Error(`Sheet template '${template}' tidak ditemukan.`);
-
   await sheetsApi.spreadsheets.batchUpdate({
     spreadsheetId,
     requestBody: {
@@ -63,36 +61,30 @@ function colToA1(colIdx: number): string {
 
 function findColIdx(headersClean: string[], label: string): number {
   const labelClean = label.toLowerCase().replace(/[\s_\-]/g, "");
+  // exact
   let colIdx = headersClean.findIndex((h) => h === labelClean);
-  if (colIdx < 0)
-    colIdx = headersClean.findIndex(
-      (h) => h.includes(labelClean) || labelClean.includes(h)
-    );
-  if (colIdx < 0) {
-    const aliases: Record<string, string[]> = {
-      jumlahue: ["jumlahue", "jumlahkartuue", "ueberedar", "kartuue"],
-      registered: ["registered", "terdaftar"],
-      unregistered: ["unregistered", "tdkterdaftar"],
-      chipbased: ["chipbased", "chip", "uechip"],
-      serverbased: ["serverbased", "server", "ueserver"],
-      danafloat: ["danafloat", "float", "danauang"],
-      mesinreader: ["mesinreader", "reader", "jumlahreader"],
-      kartukredit: ["kartukredit", "jumlahkartukredit", "jumlahkk", "kk"],
-      outstanding: ["outstanding", "nilaioutstanding"],
-      npl: ["npl", "nilainpl"],
-      voltunai: ["voltunai", "volumetunai"],
-      nomtunai: ["nomtunai", "nominaltunai", "nilaitunai"],
-      volbelanja: ["volbelanja", "volumebelanja"],
-      nombelanja: ["nombelanja", "nominalbelanja", "nilaibelanja"],
-      volbillpayment: ["volbillpayment", "volbill", "billpayment", "volumebill"],
-      nombillpayment: ["nombillpayment", "nombill", "nominalbill", "nilaibill"],
-    };
-    const al = aliases[labelClean] || [];
-    colIdx = headersClean.findIndex((h) =>
-      al.some((a) => h.includes(a) || a.includes(h))
-    );
+  if (colIdx >= 0) return colIdx;
+  // contains
+  colIdx = headersClean.findIndex(
+    (h) => h.includes(labelClean) || labelClean.includes(h)
+  );
+  if (colIdx >= 0) return colIdx;
+  // aliases for common mismatches
+  const aliases: Record<string, string[]> = {
+    jumlahue: ["jumlahue", "jumlaue", "jumlahuang elektronik", "jumlahueberedar"],
+    registered: ["registered", "ue registered"],
+    unregistered: ["unregistered", "ue unregistered"],
+    chipbased: ["chipbased", "chip based", "chip"],
+    serverbased: ["serverbased", "server based", "server"],
+    danafloat: ["danafloat", "dana float", "float"],
+    mesinreader: ["mesinreader", "reader", "jumlahreader"],
+  };
+  const alts = aliases[labelClean] || [];
+  for (const a of alts) {
+    colIdx = headersClean.findIndex((h) => h === a || h.includes(a));
+    if (colIdx >= 0) return colIdx;
   }
-  return colIdx;
+  return -1;
 }
 
 export async function processSpasialPrecomputed(opts: {
@@ -134,6 +126,8 @@ export async function processSpasialPrecomputed(opts: {
       sumExpr1: t.sumExpr1,
       sumExpr2: t.sumExpr2,
       exprCols: t.exprCols,
+      blankKeyValue: t.blankKeyValue,
+      blankRowCount: t.blankRowCount,
       formula:
         t.mode === "kartu"
           ? `sum(expr_1)-sum(expr_2)=${(t.sumExpr1 || 0) - (t.sumExpr2 || 0)}`
@@ -166,32 +160,33 @@ export async function processSpasialPrecomputed(opts: {
     h.toLowerCase().replace(/[\s_\-]/g, "")
   );
   const keyByRow: string[] = [];
-  for (let i = 1; i < grid.length; i++) keyByRow[i] = cleanKey(grid[i]?.[1]);
+  for (let i = 1; i < grid.length; i++) {
+    keyByRow[i] = cleanKey(grid[i]?.[1]);
+  }
 
-  const byLabel = new Map(opts.precomputed.map((p) => [p.label, p]));
   const results: Array<Record<string, unknown>> = [];
   let ok = 0;
   let errors = 0;
 
-  for (let ti = 0; ti < tasks.length; ti++) {
-    const task = tasks[ti];
-    opts.onProgress?.(task.label, ti + 1, tasks.length);
+  for (let ti = 0; ti < opts.precomputed.length; ti++) {
+    const pre = opts.precomputed[ti];
+    const task = tasks.find((t) => t.label === pre.label) || tasks[ti];
+    opts.onProgress?.(pre.label, ti + 1, opts.precomputed.length);
     try {
-      const pre = byLabel.get(task.label);
-      if (!pre) {
+      if (!Object.keys(pre.values).length && !pre.file) {
         results.push({
-          job: task.label,
+          job: pre.label,
           status: "warn",
           reason: "Tidak ada data precomputed",
         });
         continue;
       }
-      const colIdx = findColIdx(headersClean, task.label);
+      const colIdx = findColIdx(headersClean, task?.label || pre.label);
       if (colIdx < 0) {
         results.push({
-          job: task.label,
+          job: pre.label,
           status: "error",
-          reason: `Kolom tidak ditemukan untuk '${task.label}'`,
+          reason: `Kolom tidak ditemukan untuk '${pre.label}'`,
           headersSample: headers.slice(0, 15),
         });
         errors++;
@@ -203,7 +198,8 @@ export async function processSpasialPrecomputed(opts: {
       let written = 0;
       for (let r = 1; r < grid.length; r++) {
         const k = keyByRow[r];
-        if (!k || k === "n/a") continue;
+        // include "0000" (blank lokasinasabah) — only skip empty key
+        if (!k) continue;
         const val = pre.values[k] ?? 0;
         const cell =
           mode === "nom" || mode === "col_juta"
@@ -222,7 +218,7 @@ export async function processSpasialPrecomputed(opts: {
       }
 
       results.push({
-        job: task.label,
+        job: pre.label,
         status: "ok",
         file: pre.file,
         column: headers[colIdx],
@@ -235,7 +231,7 @@ export async function processSpasialPrecomputed(opts: {
       ok++;
     } catch (e) {
       results.push({
-        job: task.label,
+        job: pre.label,
         status: "error",
         reason: e instanceof Error ? e.message : String(e),
       });
@@ -243,5 +239,5 @@ export async function processSpasialPrecomputed(opts: {
     }
   }
 
-  return { results, summary: { total: tasks.length, ok, errors } };
+  return { results, summary: { total: opts.precomputed.length, ok, errors } };
 }
