@@ -1,6 +1,11 @@
 /**
  * Browser + server safe Spasial aggregation (no Node-only APIs).
  * Used by client pre-parse and server fallback.
+ *
+ * Jumlah UE (Spasial UE.ipynb):
+ *   spatial = groupby(lokasinasabah).sum(expr_1) - sum(expr_2)
+ *   blank lokasinasabah → fillna(0) → "0000"
+ *   total = spatial + LSBU KARTU_ELEKTRONIK (JENIS_DATA 001-Jumlah Kartu)
  */
 export type SpasialMode =
   | "kartu"
@@ -33,7 +38,7 @@ export const SPASIAL_ATM_TASKS: SpasialTask[] = [
 ];
 
 export const SPASIAL_UE_TASKS: SpasialTask[] = [
-  { label: "Jumlah UE", fileHints: ["jumlah_ue", "ue_beredar", "jumlah_ue_beredar"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["001-Jumlah Kartu"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Jumlah UE", fileHints: ["jumlah_ue", "ue_beredar", "jumlah_ue_beredar", "Jumlah_UE_Beredar"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["001-Jumlah Kartu"], lsbuCols: ["KARTU_ELEKTRONIK"] },
   { label: "registered", fileHints: ["registered"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["056-Registered"], lsbuCols: ["KARTU_ELEKTRONIK"] },
   { label: "unregistered", fileHints: ["unregistered"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["057-Unregistered"], lsbuCols: ["KARTU_ELEKTRONIK"] },
   { label: "chipbased", fileHints: ["chip"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["051-Chip based"], lsbuCols: ["KARTU_ELEKTRONIK"] },
@@ -69,8 +74,11 @@ export function spasialEnvForGroup(group: string): string {
 export type Row = Record<string, unknown>;
 
 export function cleanKey(val: unknown): string {
-  // Notebook parity (Spasial UE): blank / NaN / n/a / 0 → "0000"
-  // so rows without lokasinasabah still aggregate under kode 0000.
+  // Spasial UE.ipynb:
+  //   groupby(lokasinasabah, dropna=False)
+  //   then fillna(0).astype(int).astype(str).str.zfill(4)
+  // Blank/NaN/0 → "0000". Valid city codes stay 4-digit.
+  // Blank rows are aggregated — never dropped.
   const s = String(val ?? "").trim();
   if (!s || s.toLowerCase() === "n/a" || s.toLowerCase() === "nan") return "0000";
   const digits = s.replace(/\D/g, "");
@@ -150,7 +158,6 @@ function pickValCol(row: Row, colName: string): unknown {
   return best ? row[best.k] : undefined;
 }
 
-/** Find column key for expr_1 / expr_2. Matches expr_1, EXPR_1, expr1, expr 1, etc. */
 function findExprKey(row: Row, which: 1 | 2): string | null {
   const want = `expr${which}`;
   for (const k of Object.keys(row)) {
@@ -166,7 +173,6 @@ function findExprKey(row: Row, which: 1 | 2): string | null {
 function getExpr(row: Row, which: 1 | 2): number {
   const k = findExprKey(row, which);
   if (k) return num(row[k]);
-  // fallback common aliases
   const aliases =
     which === 1
       ? ["expr_1", "EXPR_1", "expr1", "Expr_1", "nilai1", "jumlah"]
@@ -196,16 +202,14 @@ function resolveValue(row: Row, task: SpasialTask): number {
 }
 
 /**
- * Aggregate spatial rows.
- * Notebook parity for mode kartu:
- *   groupby(lokasinasabah) -> sum(expr_1) - sum(expr_2)
- * Blank lokasinasabah maps to key "0000".
+ * Aggregate spatial rows — notebook parity for kartu:
+ *   groupby(lokasinasabah) → sum(expr_1) - sum(expr_2)
+ * Blank lokasinasabah → key "0000" (included, not dropped).
  */
 export function aggregateSpatial(rows: Row[], task: SpasialTask): Record<string, number> {
   const map: Record<string, number> = {};
   const mesinTypes = ["ACMAC", "ACMAT", "ACMCD", "ACMNT"];
 
-  // Notebook-style for kartu / kk_sum: accumulate e1 & e2 separately, then combine
   if (task.mode === "kartu" || task.mode === "kk_sum") {
     const e1: Record<string, number> = {};
     const e2: Record<string, number> = {};
@@ -214,8 +218,7 @@ export function aggregateSpatial(rows: Row[], task: SpasialTask): Record<string,
       e1[key] = (e1[key] || 0) + getExpr(r, 1);
       e2[key] = (e2[key] || 0) + getExpr(r, 2);
     }
-    const keys = new Set([...Object.keys(e1), ...Object.keys(e2)]);
-    for (const k of keys) {
+    for (const k of new Set([...Object.keys(e1), ...Object.keys(e2)])) {
       map[k] =
         task.mode === "kartu"
           ? (e1[k] || 0) - (e2[k] || 0)
@@ -227,7 +230,6 @@ export function aggregateSpatial(rows: Row[], task: SpasialTask): Record<string,
   for (const r of rows) {
     const key = cleanKey(pickKeyCol(r, task.spKey));
     let v = 0;
-
     if (task.mode === "mesin") {
       const jenis = String(r["jenismesin"] ?? r["JENISMESIN"] ?? r["jenis_mesin"] ?? "")
         .toUpperCase()
@@ -246,7 +248,6 @@ export function aggregateSpatial(rows: Row[], task: SpasialTask): Record<string,
         valueCols: [...(task.valueCols || []), "jumlahreader", "expr_1"],
       });
     }
-
     map[key] = (map[key] || 0) + v;
   }
   return map;
@@ -274,7 +275,6 @@ export function aggregateLsbu(lsbuRows: Row[], task: SpasialTask): Record<string
       sum += num(r[c] ?? r[c.toLowerCase()] ?? r[c.toUpperCase()]);
     }
     if (sum === 0) {
-      // fallback first numeric-looking col besides keys
       for (const [k, v] of Object.entries(r)) {
         const nk = k.toLowerCase();
         if (nk.includes("kartu") || nk.includes("jumlah") || nk.includes("nilai")) {
@@ -302,6 +302,11 @@ export function finalValues(
     }
     out[k] = total;
   }
+  // Notebook blank key is "0000". Also mirror to "n/a" so sheet rows
+  // whose city cell is empty (cleanKey → 0000 already) stay consistent.
+  if (out["0000"] != null && out["n/a"] == null) {
+    out["n/a"] = out["0000"];
+  }
   return out;
 }
 
@@ -316,7 +321,6 @@ export type PrecomputedTask = {
   sumExpr2?: number;
   exprCols?: string[];
   sampleKeys?: string[];
-  /** Total for blank lokasinasabah (key "0000") after expr_1 - expr_2 */
   blankKeyValue?: number;
   blankRowCount?: number;
 };
@@ -368,7 +372,7 @@ export function buildPrecomputed(
       sumExpr1,
       sumExpr2,
       exprCols,
-      sampleKeys: Object.keys(sp).slice(0, 5),
+      sampleKeys: Object.keys(sp).slice(0, 8),
       blankKeyValue: sp["0000"] ?? 0,
       blankRowCount,
     };
