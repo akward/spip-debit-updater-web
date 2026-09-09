@@ -6,7 +6,8 @@
  *   blank / "" / "0" / nan → "n/a" (also aliased as "0000")
  *   else first-4 digits zfill (LSBU: str[:4].zfill(4))
  * Instrumen/txn: spatial + LSBU; blank lokasi = spatial saja (tanpa LSBU)
- * Nom: (sum(expr_2) + LSBU) / 1_000_000
+ * Nom ATM/Debet (Google Sheet): sum(expr_2) / 1_000_000 TANPA LSBU
+ * Nom UE: (sum(expr_2) + LSBU) / 1_000_000
  */
 export type SpasialMode =
   | "kartu"
@@ -32,7 +33,7 @@ export type SpasialTask = {
 export const SPASIAL_ATM_TASKS: SpasialTask[] = [
   {
     label: "Kartu ATM",
-    fileHints: ["Jumlah_Kartu_ATM_Beredar", "kartu_atm_beredar", "Jumlah_Kartu_ATM"],
+    fileHints: ["Jumlah_Kartu_ATM_Beredar_(Spasial)", "Jumlah_Kartu_ATM_Beredar", "Kartu_ATM_Beredar"],
     spKey: "lokasinasabah",
     mode: "kartu",
     lsbuCodes: ["001-Jumlah Kartu"],
@@ -40,7 +41,7 @@ export const SPASIAL_ATM_TASKS: SpasialTask[] = [
   },
   {
     label: "Kartu Debet",
-    fileHints: ["Jumlah_Kartu_Debet_Beredar", "kartu_debet_beredar", "kartu_debit_beredar", "Jumlah_Kartu_Debet"],
+    fileHints: ["Jumlah_Kartu_Debet_Beredar_(Spasial)", "Jumlah_Kartu_Debet_Beredar", "Kartu_Debet_Beredar", "Kartu_Debit_Beredar"],
     spKey: "lokasinasabah",
     mode: "kartu",
     lsbuCodes: ["001-Jumlah Kartu"],
@@ -48,7 +49,7 @@ export const SPASIAL_ATM_TASKS: SpasialTask[] = [
   },
   {
     label: "Mesin ATM",
-    fileHints: ["Jumlah_Mesin_ATM_Beredar", "Jumlah_Mesin_ATM", "mesin_atm", "mesin.xlsx"],
+    fileHints: ["Jumlah_Mesin_ATM_Beredar_(Spasial)", "Jumlah_Mesin_ATM_Beredar", "Jumlah_Mesin_ATM", "mesin_atm"],
     spKey: "lokasimesin",
     mode: "mesin",
     lsbuCodes: ["121-Jumlah Mesin ATM"],
@@ -56,7 +57,7 @@ export const SPASIAL_ATM_TASKS: SpasialTask[] = [
   },
   {
     label: "Vol Tunai",
-    fileHints: ["Transaksi_Tunai_ATM_Debet", "Tunai_ATM_Debet"],
+    fileHints: ["Transaksi_Tunai_ATM_Debet_(Spasial)", "Transaksi_Tunai_ATM_Debet"],
     spKey: "lokasitransaksi",
     mode: "vol",
     lsbuCodes: [
@@ -67,13 +68,13 @@ export const SPASIAL_ATM_TASKS: SpasialTask[] = [
   },
   {
     label: "Vol SetorTunai",
-    fileHints: ["Transaksi_Setor_Tunai_ATM_Debet", "Setor_Tunai_ATM_Debet"],
+    fileHints: ["Transaksi_Setor_Tunai_ATM_Debet_(Spasial)", "Transaksi_Setor_Tunai_ATM_Debet"],
     spKey: "lokasitransaksi",
     mode: "vol",
   },
   {
     label: "Vol Belanja",
-    fileHints: ["Transaksi_Belanja_ATM_Debet", "Belanja_ATM_Debet"],
+    fileHints: ["Transaksi_Belanja_ATM_Debet_(Spasial)", "Transaksi_Belanja_ATM_Debet"],
     spKey: "lokasitransaksi",
     mode: "vol",
     lsbuCodes: [
@@ -84,17 +85,21 @@ export const SPASIAL_ATM_TASKS: SpasialTask[] = [
   },
   {
     label: "Vol Pembayaran",
-    fileHints: ["Transaksi_Pembayaran_ATM_Debet", "Pembayaran_ATM_Debet"],
-    spKey: "lokasitransaksi",
-    mode: "vol",
-  },
-  {
-    label: "Vol Interbank",
-    fileHints: ["Transfer_Interbank_ATM_Debet", "Transaksi_Transfer_Interbank"],
+    fileHints: ["Transaksi_Pembayaran_ATM_Debet_(Spasial)", "Transaksi_Pembayaran_ATM_Debet"],
     spKey: "lokasitransaksi",
     mode: "vol",
     lsbuCodes: [
-      "091-Volume transaksi transfer interbank",
+      "091-Volume transaksi pembayaran internasional",
+      "092-Volume transaksi pembayaran domestik",
+    ],
+    lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"],
+  },
+  {
+    label: "Vol Interbank",
+    fileHints: ["Transaksi_Transfer_Interbank_ATM_Debet_(Spasial)", "Transfer_Interbank_ATM_Debet", "Transfer_Interbank"],
+    spKey: "lokasitransaksi",
+    mode: "vol",
+    lsbuCodes: [
       "084-Volume transaksi transfer dana antar bank internasional",
       "085-Volume transaksi transfer dana antar bank domestik",
     ],
@@ -102,71 +107,47 @@ export const SPASIAL_ATM_TASKS: SpasialTask[] = [
   },
   {
     label: "Vol Antarbank",
-    fileHints: ["Transfer_Antarbank_ATM_Debet", "Transaksi_Transfer_Antarbank"],
+    fileHints: ["Transaksi_Transfer_Antarbank_ATM_Debet_(Spasial)", "Transfer_Antarbank_ATM_Debet", "Transfer_Antarbank"],
     spKey: "lokasitransaksi",
     mode: "vol",
-    lsbuCodes: [
-      "092-Volume transaksi transfer antarbank",
-      "083-Volume transaksi transfer dana intra bank",
-    ],
+    lsbuCodes: ["083-Volume transaksi transfer dana intra bank"],
     lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"],
   },
   {
     label: "Nom Tunai",
-    fileHints: ["Transaksi_Tunai_ATM_Debet", "Tunai_ATM_Debet"],
+    fileHints: ["Transaksi_Tunai_ATM_Debet_(Spasial)", "Transaksi_Tunai_ATM_Debet"],
     spKey: "lokasitransaksi",
     mode: "nom",
-    lsbuCodes: [
-      "101-Nominal transaksi tarik tunai internasional",
-      "102-Nominal transaksi tarik tunai domestik",
-    ],
-    lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"],
   },
   {
     label: "Nom Setor Tunai",
-    fileHints: ["Transaksi_Setor_Tunai_ATM_Debet", "Setor_Tunai_ATM_Debet"],
+    fileHints: ["Transaksi_Setor_Tunai_ATM_Debet_(Spasial)", "Transaksi_Setor_Tunai_ATM_Debet"],
     spKey: "lokasitransaksi",
     mode: "nom",
   },
   {
     label: "Nom Belanja",
-    fileHints: ["Transaksi_Belanja_ATM_Debet", "Belanja_ATM_Debet"],
+    fileHints: ["Transaksi_Belanja_ATM_Debet_(Spasial)", "Transaksi_Belanja_ATM_Debet"],
     spKey: "lokasitransaksi",
     mode: "nom",
-    lsbuCodes: [
-      "106-Nominal transaksi belanja internasional",
-      "107-Nominal transaksi belanja domestik",
-    ],
-    lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"],
   },
   {
     label: "Nom Pembayaran",
-    fileHints: ["Transaksi_Pembayaran_ATM_Debet", "Pembayaran_ATM_Debet"],
+    fileHints: ["Transaksi_Pembayaran_ATM_Debet_(Spasial)", "Transaksi_Pembayaran_ATM_Debet"],
     spKey: "lokasitransaksi",
     mode: "nom",
   },
   {
     label: "Nom Interbank",
-    fileHints: ["Transfer_Interbank_ATM_Debet", "Transaksi_Transfer_Interbank"],
+    fileHints: ["Transaksi_Transfer_Interbank_ATM_Debet_(Spasial)", "Transfer_Interbank_ATM_Debet", "Transfer_Interbank"],
     spKey: "lokasitransaksi",
     mode: "nom",
-    lsbuCodes: [
-      "111-Nominal transaksi transfer interbank",
-      "104-Nominal transaksi transfer dana antar bank internasional",
-      "105-Nominal transaksi transfer dana antar bank domestik",
-    ],
-    lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"],
   },
   {
     label: "Nom Antarbank",
-    fileHints: ["Transfer_Antarbank_ATM_Debet", "Transaksi_Transfer_Antarbank"],
+    fileHints: ["Transaksi_Transfer_Antarbank_ATM_Debet_(Spasial)", "Transfer_Antarbank_ATM_Debet", "Transfer_Antarbank"],
     spKey: "lokasitransaksi",
     mode: "nom",
-    lsbuCodes: [
-      "112-Nominal transaksi transfer antarbank",
-      "103-Nominal transaksi transfer dana intra bank",
-    ],
-    lsbuCols: ["KARTU_ATM", "KARTU_ATM_DEBIT"],
   },
 ];
 
@@ -366,20 +347,24 @@ export function aggregateSpatial(rows: Row[], task: SpasialTask): Record<string,
     if (task.mode === "mesin") {
       const jenisRaw = r["jenismesin"] ?? r["JENISMESIN"] ?? r["jenis_mesin"];
       if (jenisRaw != null && String(jenisRaw).trim() !== "") {
-        const jenis = String(jenisRaw).toUpperCase().trim();
-        if (!mesinTypes.includes(jenis)) continue;
+        const jenis = String(jenisRaw).toUpperCase().replace(/\s+/g, "").trim();
+        if (!(mesinTypes.includes(jenis) || jenis.startsWith("ACM"))) continue;
         v = getExpr(r, 1);
       } else {
-        const jumlah = r["jumlah"] ?? r["Jumlah"] ?? r["JUMLAH"];
+        const jumlah = r["jumlah"] ?? r["Jumlah"] ?? r["JUMLAH"] ?? r["jumlah_sp"];
         if (jumlah !== undefined && jumlah !== null && jumlah !== "") {
           v = num(jumlah);
         } else {
           v = 0;
-          for (const mt of mesinTypes) {
-            const raw = r[mt] ?? r[mt.toLowerCase()] ?? r[mt.toUpperCase()];
-            v += num(raw);
+          let foundAcm = false;
+          for (const [k, val] of Object.entries(r)) {
+            const ku = k.toUpperCase().replace(/[^A-Z0-9]/g, "");
+            if (mesinTypes.includes(ku) || ku.startsWith("ACM")) {
+              v += num(val);
+              foundAcm = true;
+            }
           }
-          if (v === 0) v = getExpr(r, 1);
+          if (!foundAcm) v = getExpr(r, 1);
         }
       }
     } else if (task.mode === "vol") {
