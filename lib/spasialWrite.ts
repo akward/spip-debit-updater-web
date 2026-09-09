@@ -21,11 +21,8 @@ function resolveValueForKey(
   if (k === "0000" && "n/a" in values) return values["n/a"] ?? 0;
   const digits = k.replace(/\D/g, "");
   if (digits) {
-    const padded = digits.slice(-4).padStart(4, "0");
+    const padded = digits.slice(0, 4).padStart(4, "0");
     if (padded in values) return values[padded] ?? 0;
-    const stripped = digits.replace(/^0+/, "") || "0";
-    const padded2 = stripped.padStart(4, "0");
-    if (padded2 in values) return values[padded2] ?? 0;
   }
   return 0;
 }
@@ -87,13 +84,31 @@ function findColIdx(headersClean: string[], label: string): number {
   );
   if (colIdx >= 0) return colIdx;
   const aliases: Record<string, string[]> = {
-    jumlahue: ["jumlahue", "jumlaue", "jumlahuang elektronik", "jumlahueberedar"],
-    registered: ["registered", "ue registered"],
-    unregistered: ["unregistered", "ue unregistered"],
-    chipbased: ["chipbased", "chip based", "chip"],
-    serverbased: ["serverbased", "server based", "server"],
-    danafloat: ["danafloat", "dana float", "float"],
+    jumlahue: ["jumlahue", "jumlaue", "jumlahuangelektronik", "jumlahueberedar"],
+    registered: ["registered", "ueregistered"],
+    unregistered: ["unregistered", "ueunregistered"],
+    chipbased: ["chipbased", "chip"],
+    serverbased: ["serverbased", "server"],
+    danafloat: ["danafloat", "float"],
     mesinreader: ["mesinreader", "reader", "jumlahreader"],
+    voltariktunai: ["voltariktunai", "voltarik"],
+    nomtariktunai: ["nomtariktunai"],
+    volbelanja: ["volbelanja"],
+    nombelanja: ["nombelanja"],
+    volpembayaran: ["volpembayaran"],
+    nompembayaran: ["nompembayaran"],
+    volinitial: ["volinitial"],
+    nominitial: ["nominitial"],
+    volreload: ["volreload", "voltopup"],
+    nomreload: ["nomreload", "nomtopup"],
+    voltransferantarue: ["voltransferantarue", "voltransferantar"],
+    nomtransferantarue: ["nomtransferantarue", "nomtransferantar"],
+    volredeem: ["volredeem", "volreedem"],
+    nomredeem: ["nomredeem", "nomreedem"],
+    voltransferkerekening: ["voltransferkerekening", "voltransferrekening"],
+    nomtransferkerekening: ["nomtransferkerekening", "nomtransferrekening"],
+    voltransferpemerintah: ["voltransferpemerintah"],
+    nomtransferpemerintah: ["nomtransferpemerintah"],
   };
   const alts = aliases[labelClean] || [];
   for (const a of alts) {
@@ -212,7 +227,6 @@ export async function processSpasialPrecomputed(opts: {
       let written = 0;
       for (let r = 1; r < grid.length; r++) {
         const k = keyByRow[r];
-        // include "n/a" / "0000" (blank location) — only skip empty key
         if (!k) continue;
         const val = resolveValueForKey(pre.values, k);
         const cell =
