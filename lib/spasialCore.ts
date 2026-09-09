@@ -5,7 +5,7 @@
  * Key mapping = notebook Spasial UE + KK Google Sheet:
  *   blank / "" / "0" / nan → "n/a" (also aliased as "0000")
  *   else first-4 digits zfill (LSBU: str[:4].zfill(4))
- * Jumlah UE: sum(expr_1)-sum(expr_2) + LSBU; blank lokasi = expr saja (tanpa LSBU)
+ * Instrumen/txn: spatial + LSBU; blank lokasi = spatial saja (tanpa LSBU)
  */
 export type SpasialMode =
   | "kartu"
@@ -38,17 +38,31 @@ export const SPASIAL_ATM_TASKS: SpasialTask[] = [
 ];
 
 export const SPASIAL_UE_TASKS: SpasialTask[] = [
-  { label: "Jumlah UE", fileHints: ["jumlah_ue", "ue_beredar", "jumlah_ue_beredar", "Jumlah_UE_Beredar"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["001-Jumlah Kartu"], lsbuCols: ["KARTU_ELEKTRONIK"] },
-  { label: "registered", fileHints: ["registered"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["056-Registered"], lsbuCols: ["KARTU_ELEKTRONIK"] },
-  { label: "unregistered", fileHints: ["unregistered"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["057-Unregistered"], lsbuCols: ["KARTU_ELEKTRONIK"] },
-  { label: "chipbased", fileHints: ["chip"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["051-Chip based"], lsbuCols: ["KARTU_ELEKTRONIK"] },
-  { label: "serverbased", fileHints: ["server"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["052-Server based"], lsbuCols: ["KARTU_ELEKTRONIK"] },
-  { label: "Dana Float", fileHints: ["server", "dana_float", "float"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["070-Dana Float"], lsbuCols: ["KARTU_ELEKTRONIK"] },
-  { label: "Mesin Reader", fileHints: ["reader"], spKey: "lokasimesin", mode: "reader", valueCols: ["jumlahreader", "expr_1"], lsbuCodes: ["122-Jumlah Mesin Reader Uang Elektronik"] },
-  { label: "Vol Tarik Tunai", fileHints: ["tunai", "tarik_tunai"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["098-Volume transaksi tarik tunai uang elektronik"] },
-  { label: "Nom Tarik Tunai", fileHints: ["tunai", "tarik_tunai"], spKey: "lokasitransaksi", mode: "nom", lsbuCodes: ["118-Nominal transaksi tarik tunai uang elektronik"] },
-  { label: "Vol Belanja", fileHints: ["belanja"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["086-Volume transaksi belanja internasional", "087-Volume transaksi belanja domestik"] },
-  { label: "Nom Belanja", fileHints: ["belanja"], spKey: "lokasitransaksi", mode: "nom", lsbuCodes: ["106-Nominal transaksi belanja internasional", "107-Nominal transaksi belanja domestik"] },
+  { label: "Jumlah UE", fileHints: ["Jumlah_UE_Beredar_(Spasial)", "jumlah_ue_beredar", "jumlah_ue"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["001-Jumlah Kartu"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "registered", fileHints: ["Jumlah_UE_Registered", "registered_beredar", "registered"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["056-Registered"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "unregistered", fileHints: ["Unregistered", "unregister"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["057-Unregistered"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "chipbased", fileHints: ["Jumlah_UE_Chip", "chip_beredar", "chip"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["051-Chip based"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "serverbased", fileHints: ["Jumlah_UE_Server", "server_beredar", "serverbased"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["052-Server based"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Dana Float", fileHints: ["Dana_Float", "dana_float", "float"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["070-Dana Float"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Mesin Reader", fileHints: ["Reader_UE", "reader"], spKey: "lokasimesin", mode: "reader", valueCols: ["jumlahreader", "expr_1"], lsbuCodes: ["122-Jumlah Mesin Reader Uang Elektronik"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Vol Tarik Tunai", fileHints: ["Transaksi_Tunai_Uang_Elektronik", "Transaksi_Tunai_UE", "tunai"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["098-Volume transaksi tarik tunai uang elektronik"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Vol Belanja", fileHints: ["Transaksi_Belanja_Uang_Elektronik", "belanja"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["086-Volume transaksi belanja internasional", "087-Volume transaksi belanja domestik"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Vol Pembayaran", fileHints: ["Transaksi_Pembayaran_Uang_Elektronik", "pembayaran"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["088-Volume Transaksi Online Internasional", "089-Volume Transaksi Online Domestik"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Vol Initial", fileHints: ["Transaksi_initial", "initial"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["096-Volume transaksi Initial"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Vol Reload", fileHints: ["Transaksi_Top_UP", "reload", "top_up", "topup"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["097-Volume transaksi reload/top up"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Vol Transfer Antar UE", fileHints: ["Transfer_Antar_Uang_Elektronik", "transfer_antar", "transfer_UE"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["093-Volume transaksi transfer antar uang elektronik"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Vol Redeem", fileHints: ["Transaksi_Redeem", "reedem", "redeem"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["099-Volume transaksi reedem"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Vol Transfer ke Rekening", fileHints: ["Transfer_UE_ke_Rekening", "transfer_ke_rekening"], spKey: "lokasitransaksi", mode: "vol", lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Vol Transfer Pemerintah", fileHints: ["Transfer_Pemerintah_ke_UE", "transfer_pemerintah"], spKey: "lokasitransaksi", mode: "vol", lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Nom Tarik Tunai", fileHints: ["Transaksi_Tunai_Uang_Elektronik", "Transaksi_Tunai_UE", "tunai"], spKey: "lokasitransaksi", mode: "nom", lsbuCodes: ["118-Nominal transaksi tarik tunai uang elektronik"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Nom Belanja", fileHints: ["Transaksi_Belanja_Uang_Elektronik", "belanja"], spKey: "lokasitransaksi", mode: "nom", lsbuCodes: ["106-Nominal transaksi belanja internasional", "107-Nominal transaksi belanja domestik"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Nom Pembayaran", fileHints: ["Transaksi_Pembayaran_Uang_Elektronik", "pembayaran"], spKey: "lokasitransaksi", mode: "nom", lsbuCodes: ["108-Nominal Transaksi Online Internasional", "109-Nominal Transaksi Online Domestik"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Nom Initial", fileHints: ["Transaksi_initial", "initial"], spKey: "lokasitransaksi", mode: "nom", lsbuCodes: ["116-Nominal transaksi Initial"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Nom Reload", fileHints: ["Transaksi_Top_UP", "reload", "top_up", "topup"], spKey: "lokasitransaksi", mode: "nom", lsbuCodes: ["117-Nominal transaksi reload/top up"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Nom Transfer Antar UE", fileHints: ["Transfer_Antar_Uang_Elektronik", "transfer_antar", "transfer_UE"], spKey: "lokasitransaksi", mode: "nom", lsbuCodes: ["113-Nominal transaksi transfer antar uang elektronik"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Nom Redeem", fileHints: ["Transaksi_Redeem", "reedem", "redeem"], spKey: "lokasitransaksi", mode: "nom", lsbuCodes: ["119-Nominal transaksi reedem"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Nom Transfer ke Rekening", fileHints: ["Transfer_UE_ke_Rekening", "transfer_ke_rekening"], spKey: "lokasitransaksi", mode: "nom", lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Nom Transfer Pemerintah", fileHints: ["Transfer_Pemerintah_ke_UE", "transfer_pemerintah"], spKey: "lokasitransaksi", mode: "nom", lsbuCols: ["KARTU_ELEKTRONIK"] },
 ];
 
 export const SPASIAL_KK_TASKS: SpasialTask[] = [
@@ -74,20 +88,14 @@ export function spasialEnvForGroup(group: string): string {
 export type Row = Record<string, unknown>;
 
 export function cleanKey(val: unknown): string {
-  // Notebook:
-  //   LSBU KOTA: str[:4].zfill(4)  → 4 digit PERTAMA
-  //   spatial: fillna(0).astype(int).astype(str).str.zfill(4)
-  // Blank → "n/a"; non-blank → 4 digit (leading zero).
   const s = String(val ?? "").trim().toLowerCase();
   if (!s || s === "n/a" || s === "nan" || s === "0" || s === "-" || s.includes("n/a")) {
     return "n/a";
   }
-  // Buang desimal Excel (3171.0 → 3171) sebelum ambil digit
   const beforeDot = String(val ?? "").trim().split(".")[0];
   let digits = beforeDot.replace(/\D/g, "");
   if (!digits) digits = s.replace(/\D/g, "");
   if (!digits || /^0+$/.test(digits)) return "n/a";
-  // 4 digit PERTAMA + pad (sama notebook LSBU)
   return digits.slice(0, 4).padStart(4, "0");
 }
 
@@ -124,16 +132,7 @@ export function findFile(
 }
 
 function pickKeyCol(row: Row, spKey: string): unknown {
-  const candidates = [
-    spKey,
-    "lokasinasabah",
-    "kota",
-    "lokasitransaksi",
-    "lokasimesin",
-    "kotakab",
-    "kodekota",
-    "idkota",
-  ];
+  const candidates = [spKey, "lokasinasabah", "kota", "lokasitransaksi", "lokasimesin", "kotakab", "kodekota", "idkota"];
   const seen = new Set<string>();
   for (const cand of candidates) {
     const want = cand.toLowerCase().replace(/[\s_]/g, "");
@@ -193,10 +192,7 @@ function getExpr(row: Row, which: 1 | 2): number {
 }
 
 function resolveValue(row: Row, task: SpasialTask): number {
-  const candidates = [
-    ...(task.valueCols || []),
-    ...(task.valueCol ? [task.valueCol] : []),
-  ];
+  const candidates = [...(task.valueCols || []), ...(task.valueCol ? [task.valueCol] : [])];
   const seen = new Set<string>();
   for (const c of candidates) {
     const n = c.toLowerCase();
@@ -210,11 +206,6 @@ function resolveValue(row: Row, task: SpasialTask): number {
   return 0;
 }
 
-/**
- * Aggregate spatial rows — notebook parity for kartu:
- *   groupby(lokasinasabah) → sum(expr_1) - sum(expr_2)
- * Blank lokasinasabah → key "n/a" (included, not dropped).
- */
 export function aggregateSpatial(rows: Row[], task: SpasialTask): Record<string, number> {
   const map: Record<string, number> = {};
   const mesinTypes = ["ACMAC", "ACMAT", "ACMCD", "ACMNT"];
@@ -265,10 +256,7 @@ export function aggregateSpatial(rows: Row[], task: SpasialTask): Record<string,
 export function aggregateLsbu(lsbuRows: Row[], task: SpasialTask): Record<string, number> {
   const map: Record<string, number> = {};
   if (!task.lsbuCodes?.length) return map;
-  // Notebook: exact match JENIS_DATA == '001-Jumlah Kartu'
-  const codes = task.lsbuCodes.map((c) =>
-    c.trim().toLowerCase().replace(/\s+/g, " ")
-  );
+  const codes = task.lsbuCodes.map((c) => c.trim().toLowerCase().replace(/\s+/g, " "));
   const cols = task.lsbuCols?.length ? task.lsbuCols : ["KARTU_ELEKTRONIK"];
 
   for (const r of lsbuRows) {
@@ -276,15 +264,12 @@ export function aggregateLsbu(lsbuRows: Row[], task: SpasialTask): Record<string
       .trim()
       .toLowerCase()
       .replace(/\s+/g, " ");
-    // Notebook: JENIS_DATA == '001-Jumlah Kartu'
     const match = codes.some((c) => jd === c || jd.startsWith(c) || c.startsWith(jd));
     if (!match) continue;
-    // Notebook: KOTA str[:4].zfill(4) via cleanKey
     const kota = cleanKey(r["KOTA"] ?? r["kota"] ?? "");
-    if (!kota || kota === "n/a") continue; // LSBU blank kota tidak digabung ke spatial blank
+    if (!kota || kota === "n/a") continue;
     let sum = 0;
     for (const c of cols) {
-      // only explicit columns — no fallback summing other "kartu" columns
       const v = r[c] ?? r[c.toLowerCase()] ?? r[c.toUpperCase()];
       if (v !== undefined && v !== null && v !== "") {
         sum += num(v);
@@ -314,17 +299,11 @@ export function finalValues(
 
   for (const k of keys) {
     if (!k) continue;
-    // Blank lokasi: hanya spatial (expr_1 - expr_2), TANPA LSBU
-    let total = isBlankKey(k)
-      ? (sp[k] || 0)
-      : (sp[k] || 0) + (lsbu[k] || 0);
-    if (task.mode === "nom" || task.mode === "col_juta") {
-      total = total / 1_000_000;
-    }
+    let total = isBlankKey(k) ? (sp[k] || 0) : (sp[k] || 0) + (lsbu[k] || 0);
+    if (task.mode === "nom" || task.mode === "col_juta") total = total / 1_000_000;
     out[k] = total;
   }
 
-  // Blank aliases: simpan spatial-only di n/a dan 0000
   const blankSp = (sp["n/a"] ?? 0) + (sp["0000"] ?? 0);
   let blank = blankSp;
   if (task.mode === "nom" || task.mode === "col_juta") blank = blank / 1_000_000;
