@@ -42,13 +42,15 @@ export const SPASIAL_ATM_TASKS: SpasialTask[] = [
 ];
 
 export const SPASIAL_UE_TASKS: SpasialTask[] = [
-  { label: "Jumlah UE", fileHints: ["jumlah_ue_beredar", "jumlah_ue", "jumlahue"], spKey: "kota", mode: "kartu", lsbuCodes: ["001-Jumlah Kartu"], lsbuCols: ["KARTU_ELEKTRONIK"] },
-  { label: "registered", fileHints: ["jumlah_ue_registered", "registered"], spKey: "kota", mode: "kartu", lsbuCodes: ["056-Registered"], lsbuCols: ["KARTU_ELEKTRONIK"] },
-  { label: "unregistered", fileHints: ["unregistered", "jumlah_ue_beredar_unregistered"], spKey: "kota", mode: "kartu", lsbuCodes: ["057-Unregistered"], lsbuCols: ["KARTU_ELEKTRONIK"] },
-  { label: "chipbased", fileHints: ["jumlah_ue_chip", "chip"], spKey: "kota", mode: "kartu", lsbuCodes: ["051-Chip based"], lsbuCols: ["KARTU_ELEKTRONIK"] },
-  { label: "serverbased", fileHints: ["jumlah_ue_server", "server"], spKey: "kota", mode: "kartu", lsbuCodes: ["052-Server based"], lsbuCols: ["KARTU_ELEKTRONIK"] },
-  { label: "Dana Float", fileHints: ["jumlah_ue_server", "server", "dana_float"], spKey: "kota", mode: "kartu", lsbuCodes: ["070-Dana Float"], lsbuCols: ["KARTU_ELEKTRONIK"] },
-  { label: "Mesin Reader", fileHints: ["reader_ue", "reader"], spKey: "kota", mode: "reader", valueCol: "jumlahreader", valueCols: ["jumlahreader", "expr_1"], lsbuCodes: ["122-Jumlah Mesin Reader Uang Elektronik"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  // File Spasial UE header: idpelapor | lokasinasabah | expr_1 | expr_2
+  // Notebook: groupby lokasinasabah -> jumlah = sum(expr_1) - sum(expr_2) + LSBU
+  { label: "Jumlah UE", fileHints: ["jumlah_ue_beredar", "jumlah_ue", "jumlahue"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["001-Jumlah Kartu"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "registered", fileHints: ["jumlah_ue_registered", "registered"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["056-Registered"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "unregistered", fileHints: ["unregistered", "jumlah_ue_beredar_unregistered"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["057-Unregistered"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "chipbased", fileHints: ["jumlah_ue_chip", "chip"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["051-Chip based"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "serverbased", fileHints: ["jumlah_ue_server", "server"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["052-Server based"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Dana Float", fileHints: ["jumlah_ue_server", "server", "dana_float"], spKey: "lokasinasabah", mode: "kartu", lsbuCodes: ["070-Dana Float"], lsbuCols: ["KARTU_ELEKTRONIK"] },
+  { label: "Mesin Reader", fileHints: ["reader_ue", "reader"], spKey: "lokasimesin", mode: "reader", valueCol: "jumlahreader", valueCols: ["jumlahreader", "expr_1"], lsbuCodes: ["122-Jumlah Mesin Reader Uang Elektronik"], lsbuCols: ["KARTU_ELEKTRONIK"] },
   { label: "Vol Tarik Tunai", fileHints: ["transaksi_tunai_ue"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["098-Volume transaksi tarik tunai uang elektronik"], lsbuCols: ["KARTU_ELEKTRONIK"] },
   { label: "Nom Tarik Tunai", fileHints: ["transaksi_tunai_ue"], spKey: "lokasitransaksi", mode: "nom", lsbuCodes: ["118-Nominal transaksi tarik tunai uang elektronik"], lsbuCols: ["KARTU_ELEKTRONIK"] },
   { label: "Vol Belanja", fileHints: ["transaksi_belanja_uang_elektronik", "belanja_uang"], spKey: "lokasitransaksi", mode: "vol", lsbuCodes: ["086-Volume transaksi belanja internasional", "087-Volume transaksi belanja domestik"], lsbuCols: ["KARTU_ELEKTRONIK"] },
@@ -136,8 +138,8 @@ export function findFile(
 function pickKeyCol(row: Row, spKey: string): unknown {
   const candidates = [
     spKey,
-    "kota",
     "lokasinasabah",
+    "kota",
     "lokasitransaksi",
     "lokasimesin",
     "kotakab",
@@ -177,25 +179,26 @@ function pickValCol(row: Row, colName: string): unknown {
   return best ? row[best.k] : undefined;
 }
 
-/** Robust expr_1 / expr_2 lookup (SheetJS may vary header casing/spacing). */
-function getExpr(row: Row, which: 1 | 2): number {
-  const names =
-    which === 1
-      ? ["expr_1", "EXPR_1", "Expr_1", "expr1", "EXPR1", "expr 1"]
-      : ["expr_2", "EXPR_2", "Expr_2", "expr2", "EXPR2", "expr 2"];
-  for (const n of names) {
-    if (row[n] !== undefined && row[n] !== null && row[n] !== "") {
-      return num(row[n]);
-    }
-  }
+/** Find column key for expr_1 / expr_2. Matches expr_1, EXPR_1, expr1, expr 1, etc. */
+function findExprKey(row: Row, which: 1 | 2): string | null {
   const want = which === 1 ? "expr1" : "expr2";
   for (const k of Object.keys(row)) {
-    if (normalizeColKey(k) === want) {
-      const v = row[k];
-      if (v !== undefined && v !== null && v !== "") return num(v);
-    }
+    if (normalizeColKey(k) === want) return k;
   }
-  return num(pickValCol(row, which === 1 ? "expr_1" : "expr_2"));
+  const re = which === 1 ? /^expr[\s_\-]?1$/i : /^expr[\s_\-]?2$/i;
+  for (const k of Object.keys(row)) {
+    if (re.test(String(k).trim())) return k;
+  }
+  return null;
+}
+
+/** Read expr_1 or expr_2 value from row (0 if missing). */
+function getExpr(row: Row, which: 1 | 2): number {
+  const key = findExprKey(row, which);
+  if (key == null) return 0;
+  const v = row[key];
+  if (v === undefined || v === null || v === "") return 0;
+  return num(v);
 }
 
 function resolveValue(row: Row, task: SpasialTask): number {
@@ -211,18 +214,39 @@ function resolveValue(row: Row, task: SpasialTask): number {
     const raw = pickValCol(row, c);
     if (raw !== undefined && raw !== null && raw !== "") return num(raw);
   }
-  if (task.mode === "col_raw" || task.mode === "vol") {
-    return getExpr(row, 1);
-  }
-  if (task.mode === "col_juta" || task.mode === "nom") {
-    return getExpr(row, 2);
-  }
+  if (task.mode === "col_raw" || task.mode === "vol") return getExpr(row, 1);
+  if (task.mode === "col_juta" || task.mode === "nom") return getExpr(row, 2);
   return 0;
 }
 
+/**
+ * Aggregate spatial rows.
+ * Notebook parity for mode kartu:
+ *   groupby(lokasinasabah) -> sum(expr_1) - sum(expr_2)
+ */
 export function aggregateSpatial(rows: Row[], task: SpasialTask): Record<string, number> {
   const map: Record<string, number> = {};
   const mesinTypes = ["ACMAC", "ACMAT", "ACMCD", "ACMNT"];
+
+  // Notebook-style for kartu / kk_sum: accumulate e1 & e2 separately, then combine
+  if (task.mode === "kartu" || task.mode === "kk_sum") {
+    const e1: Record<string, number> = {};
+    const e2: Record<string, number> = {};
+    for (const r of rows) {
+      const key = cleanKey(pickKeyCol(r, task.spKey));
+      if (key === "n/a") continue;
+      e1[key] = (e1[key] || 0) + getExpr(r, 1);
+      e2[key] = (e2[key] || 0) + getExpr(r, 2);
+    }
+    const keys = new Set([...Object.keys(e1), ...Object.keys(e2)]);
+    for (const k of keys) {
+      map[k] =
+        task.mode === "kartu"
+          ? (e1[k] || 0) - (e2[k] || 0)
+          : (e1[k] || 0) + (e2[k] || 0);
+    }
+    return map;
+  }
 
   for (const r of rows) {
     const key = cleanKey(pickKeyCol(r, task.spKey));
@@ -235,11 +259,6 @@ export function aggregateSpatial(rows: Row[], task: SpasialTask): Record<string,
         .trim();
       if (!mesinTypes.includes(jenis)) continue;
       v = getExpr(r, 1);
-    } else if (task.mode === "kartu") {
-      // Notebook: jumlah = expr_1 - expr_2, lalu + LSBU
-      v = getExpr(r, 1) - getExpr(r, 2);
-    } else if (task.mode === "kk_sum") {
-      v = getExpr(r, 1) + getExpr(r, 2);
     } else if (task.mode === "vol") {
       v = getExpr(r, 1);
     } else if (task.mode === "nom") {
@@ -308,6 +327,10 @@ export type PrecomputedTask = {
   values: Record<string, number>;
   spatialKeys: number;
   lsbuKeys: number;
+  sumExpr1?: number;
+  sumExpr2?: number;
+  exprCols?: string[];
+  sampleKeys?: string[];
 };
 
 export function buildPrecomputed(
@@ -322,6 +345,22 @@ export function buildPrecomputed(
     const sp = file ? aggregateSpatial(file.rows, task) : {};
     const lsbu = aggregateLsbu(lsbuRows, task);
     const values = finalValues(sp, lsbu, task);
+
+    let sumExpr1 = 0;
+    let sumExpr2 = 0;
+    const exprCols: string[] = [];
+    if (file && file.rows.length) {
+      const sample = file.rows[0];
+      const k1 = findExprKey(sample, 1);
+      const k2 = findExprKey(sample, 2);
+      if (k1) exprCols.push(k1);
+      if (k2) exprCols.push(k2);
+      for (const r of file.rows) {
+        sumExpr1 += getExpr(r, 1);
+        sumExpr2 += getExpr(r, 2);
+      }
+    }
+
     return {
       label: task.label,
       mode: task.mode,
@@ -329,6 +368,10 @@ export function buildPrecomputed(
       values,
       spatialKeys: Object.keys(sp).length,
       lsbuKeys: Object.keys(lsbu).length,
+      sumExpr1,
+      sumExpr2,
+      exprCols,
+      sampleKeys: Object.keys(sp).slice(0, 5),
     };
   });
 }
