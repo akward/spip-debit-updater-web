@@ -1,5 +1,5 @@
 /**
- * Spasial Google Sheets writer — accepts client precomputed values
+ * Spasial Google Sheets writer - accepts client precomputed values
  * (avoids uploading large xlsx through Vercel 4.5MB limit).
  */
 import { getSheetsClient } from "@/lib/sheets";
@@ -130,6 +130,14 @@ export async function processSpasialPrecomputed(opts: {
       spatialKeys: t.spatialKeys,
       lsbuKeys: t.lsbuKeys,
       nonzero: Object.values(t.values).filter((v) => v !== 0).length,
+      // kartu diagnostics: harus sumExpr1 - sumExpr2
+      sumExpr1: t.sumExpr1,
+      sumExpr2: t.sumExpr2,
+      exprCols: t.exprCols,
+      formula:
+        t.mode === "kartu"
+          ? `sum(expr_1)-sum(expr_2)=${(t.sumExpr1 || 0) - (t.sumExpr2 || 0)}`
+          : t.mode,
       mode: "dry-run-client-parse",
     }));
     return {
