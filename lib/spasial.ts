@@ -213,7 +213,8 @@ export async function processSpasialGroup(opts: {
       let written = 0;
       for (let r = 1; r < grid.length; r++) {
         const k = keyByRow[r];
-        if (!k || k === "n/a") continue;
+        // include "0000" (blank lokasinasabah) — only skip empty key
+        if (!k) continue;
         const val = values[k] ?? 0;
         const cell =
           task.mode === "nom" || task.mode === "col_juta"
