@@ -5,7 +5,7 @@
  * Key mapping = Spasial KK (Google Sheet):
  *   blank / "" / "0" / nan → "n/a" (also aliased as "0000")
  *   else 4-digit city code
- * Jumlah UE: sum(expr_1)-sum(expr_2) + LSBU KARTU_ELEKTRONIK
+ * Jumlah UE: sum(expr_1)-sum(expr_2) + LSBU; blank lokasi = expr saja (tanpa LSBU)
  */
 export type SpasialMode =
   | "kartu"
@@ -102,7 +102,8 @@ export function findFile(
   files: { name: string; rows: Row[] }[],
   hints: string[]
 ): { name: string; rows: Row[] } | null {
-  let best: { name: string; rows: Row[]; score: number } | null = null;
+  let best: { name: string; rows: Row[] } | null = null;
+  let bestScore = 0;
   for (const f of files) {
     const n = normName(f.name);
     let score = 0;
@@ -110,7 +111,10 @@ export function findFile(
       const hn = normName(h);
       if (n.includes(hn)) score += hn.length;
     }
-    if (score > 0 && (!best || score > best.score)) best = { ...f, score };
+    if (score > bestScore) {
+      bestScore = score;
+      best = f;
+    }
   }
   return best;
 }
@@ -295,20 +299,25 @@ export function finalValues(
 ): Record<string, number> {
   const keys = new Set([...Object.keys(sp), ...Object.keys(lsbu)]);
   const out: Record<string, number> = {};
+  const isBlankKey = (k: string) => k === "n/a" || k === "0000";
+
   for (const k of keys) {
     if (!k) continue;
-    let total = (sp[k] || 0) + (lsbu[k] || 0);
+    // Blank lokasi: hanya spatial (expr_1 - expr_2), TANPA LSBU
+    let total = isBlankKey(k)
+      ? (sp[k] || 0)
+      : (sp[k] || 0) + (lsbu[k] || 0);
     if (task.mode === "nom" || task.mode === "col_juta") {
       total = total / 1_000_000;
     }
     out[k] = total;
   }
-  // Blank aliases: UE notebook "0000", Google Sheet KK/UE "n/a"
+
+  // Blank aliases: simpan spatial-only di n/a dan 0000
   const blankSp = (sp["n/a"] ?? 0) + (sp["0000"] ?? 0);
-  const blankLs = (lsbu["n/a"] ?? 0) + (lsbu["0000"] ?? 0);
-  let blank = blankSp + blankLs;
+  let blank = blankSp;
   if (task.mode === "nom" || task.mode === "col_juta") blank = blank / 1_000_000;
-  if (blank !== 0 || "n/a" in out || "0000" in out) {
+  if (blank !== 0 || "n/a" in sp || "0000" in sp) {
     out["n/a"] = blank;
     out["0000"] = blank;
   }
