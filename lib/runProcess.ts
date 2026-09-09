@@ -9,6 +9,8 @@ import {
 } from "@/lib/lsbu";
 import { processOneJob, isQuotaError, sleep } from "@/lib/processJobs";
 import { processSpasialGroup, spasialTasksForGroup } from "@/lib/spasial";
+import { processSpasialPrecomputed } from "@/lib/spasialWrite";
+import type { PrecomputedTask } from "@/lib/spasialCore";
 
 export async function runProcess(req: NextRequest) {
   try {
@@ -21,6 +23,20 @@ export async function runProcess(req: NextRequest) {
       (monthOverride && String(monthOverride).trim()) || previousMonthLabel();
 
     const isSpasial = group.startsWith("spasial_");
+
+    const precomputedRaw = form.get("spasialPrecomputed");
+    let precomputed: PrecomputedTask[] | null = null;
+    if (precomputedRaw && typeof precomputedRaw === "string") {
+      try {
+        precomputed = JSON.parse(precomputedRaw) as PrecomputedTask[];
+      } catch {
+        return NextResponse.json(
+          { ok: false, error: "spasialPrecomputed JSON tidak valid" },
+          { status: 400 }
+        );
+      }
+    }
+
     const jobs = isSpasial ? null : GROUPS[group];
     if (!isSpasial && !jobs) {
       return NextResponse.json(
@@ -58,6 +74,85 @@ export async function runProcess(req: NextRequest) {
     }
 
     if (isSpasial) {
+      if (precomputed && precomputed.length) {
+        const tasks = spasialTasksForGroup(group)!;
+        if (wantStream && !dryRun) {
+          const encoder = new TextEncoder();
+          const stream = new ReadableStream({
+            async start(controller) {
+              const send = (obj: Record<string, unknown>) => {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)
+                );
+              };
+              try {
+                send({
+                  type: "start",
+                  group,
+                  monthLabel,
+                  dryRun,
+                  totalJobs: tasks.length,
+                  clientParse: true,
+                });
+                const out = await processSpasialPrecomputed({
+                  group,
+                  monthLabel,
+                  dryRun: false,
+                  precomputed: precomputed!,
+                  onProgress: (msg, index, total) =>
+                    send({ type: "progress", index, total, job: msg, message: msg }),
+                });
+                for (let i = 0; i < out.results.length; i++) {
+                  const r = out.results[i];
+                  send({ type: "job", index: i + 1, total: out.results.length, ...r });
+                }
+                send({
+                  type: "done",
+                  ok: true,
+                  group,
+                  monthLabel,
+                  dryRun: false,
+                  storage: "client-parse",
+                  summary: out.summary,
+                  results: out.results,
+                });
+              } catch (e) {
+                send({
+                  type: "error",
+                  ok: false,
+                  error: e instanceof Error ? e.message : String(e),
+                });
+              } finally {
+                controller.close();
+              }
+            },
+          });
+          return new Response(stream, {
+            headers: {
+              "Content-Type": "text/event-stream; charset=utf-8",
+              "Cache-Control": "no-cache, no-transform",
+              Connection: "keep-alive",
+              "X-Accel-Buffering": "no",
+            },
+          });
+        }
+        const out = await processSpasialPrecomputed({
+          group,
+          monthLabel,
+          dryRun,
+          precomputed,
+        });
+        return NextResponse.json({
+          ok: true,
+          group,
+          monthLabel,
+          dryRun,
+          storage: "client-parse",
+          summary: out.summary,
+          results: out.results,
+        });
+      }
+
       const spatialBufs: { name: string; buf: ArrayBuffer }[] = [];
       for (const f of spatialFiles.length ? spatialFiles : files) {
         const name = f.name.toLowerCase();
