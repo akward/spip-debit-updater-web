@@ -2,10 +2,10 @@
  * Browser + server safe Spasial aggregation (no Node-only APIs).
  * Used by client pre-parse and server fallback.
  *
- * Jumlah UE (Spasial UE.ipynb):
- *   spatial = groupby(lokasinasabah).sum(expr_1) - sum(expr_2)
- *   blank lokasinasabah → fillna(0) → "0000"
- *   total = spatial + LSBU KARTU_ELEKTRONIK (JENIS_DATA 001-Jumlah Kartu)
+ * Key mapping = Spasial KK (Google Sheet):
+ *   blank / "" / "0" / nan → "n/a"
+ *   else 4-digit city code
+ * Jumlah UE: sum(expr_1)-sum(expr_2) + LSBU KARTU_ELEKTRONIK
  */
 export type SpasialMode =
   | "kartu"
@@ -52,9 +52,9 @@ export const SPASIAL_UE_TASKS: SpasialTask[] = [
 ];
 
 export const SPASIAL_KK_TASKS: SpasialTask[] = [
-  { label: "Jumlah Kartu", fileHints: ["jumlah_kartu", "kartu_kredit"], spKey: "lokasinasabah", mode: "kk_sum", valueCols: ["sum(frekuensitransaksi)", "expr_1"] },
-  { label: "Outstanding", fileHints: ["outstanding"], spKey: "lokasinasabah", mode: "col_juta", valueCols: ["outstanding", "expr_1", "expr_2"] },
-  { label: "NPL", fileHints: ["npl"], spKey: "lokasinasabah", mode: "col_juta", valueCols: ["npl", "expr_1", "expr_2"] },
+  { label: "Jumlah Kartu", fileHints: ["jumlah_kartu", "kartu_kredit", "Jumlah_KK_Beredar"], spKey: "kotakab", mode: "kk_sum", valueCols: ["sum(frekuensitransaksi)", "expr_1"] },
+  { label: "Outstanding", fileHints: ["outstanding", "Nominal_Outstanding"], spKey: "kotakab", mode: "col_juta", valueCols: ["outstanding", "expr_1", "expr_2"] },
+  { label: "NPL", fileHints: ["npl", "Nominal_NPL"], spKey: "kotakab", mode: "col_juta", valueCols: ["npl", "expr_1", "expr_2"] },
 ];
 
 export function spasialTasksForGroup(group: string): SpasialTask[] | null {
@@ -74,16 +74,23 @@ export function spasialEnvForGroup(group: string): string {
 export type Row = Record<string, unknown>;
 
 export function cleanKey(val: unknown): string {
-  // Spasial UE.ipynb:
-  //   groupby(lokasinasabah, dropna=False)
-  //   then fillna(0).astype(int).astype(str).str.zfill(4)
-  // Blank/NaN/0 → "0000". Valid city codes stay 4-digit.
-  // Blank rows are aggregated — never dropped.
-  const s = String(val ?? "").trim();
-  if (!s || s.toLowerCase() === "n/a" || s.toLowerCase() === "nan") return "0000";
-  const digits = s.replace(/\D/g, "");
-  if (!digits || /^0+$/.test(digits)) return "0000";
-  return digits.slice(0, 4).padStart(4, "0");
+  // Samakan dengan Spasial KK (Spasial_google sheet.ipynb):
+  //   blank / nan / "" / "0" → "n/a"
+  //   selain itu: digit dari 4 karakter pertama, zfill 4
+  // Sheet & spatial memakai cleanKey yang sama → blank map ke baris n/a di sheet.
+  const s = String(val ?? "").trim().toLowerCase();
+  if (!s || s === "n/a" || s === "nan" || s === "0" || s.includes("n/a")) return "n/a";
+  // Ambil digit dari 4 karakter pertama (pola KK)
+  const head = s.slice(0, 4);
+  const digits = head.replace(/\D/g, "");
+  if (!digits) {
+    // fallback: semua digit lalu 4 terakhir (pola UE google sheet)
+    const all = s.replace(/\D/g, "");
+    if (!all || /^0+$/.test(all)) return "n/a";
+    return all.slice(-4).padStart(4, "0");
+  }
+  if (/^0+$/.test(digits)) return "n/a";
+  return digits.padStart(4, "0");
 }
 
 function num(v: unknown): number {
@@ -204,7 +211,7 @@ function resolveValue(row: Row, task: SpasialTask): number {
 /**
  * Aggregate spatial rows — notebook parity for kartu:
  *   groupby(lokasinasabah) → sum(expr_1) - sum(expr_2)
- * Blank lokasinasabah → key "0000" (included, not dropped).
+ * Blank lokasinasabah → key "n/a" (included, not dropped).
  */
 export function aggregateSpatial(rows: Row[], task: SpasialTask): Record<string, number> {
   const map: Record<string, number> = {};
@@ -302,11 +309,6 @@ export function finalValues(
     }
     out[k] = total;
   }
-  // Notebook blank key is "0000". Also mirror to "n/a" so sheet rows
-  // whose city cell is empty (cleanKey → 0000 already) stay consistent.
-  if (out["0000"] != null && out["n/a"] == null) {
-    out["n/a"] = out["0000"];
-  }
   return out;
 }
 
@@ -373,7 +375,7 @@ export function buildPrecomputed(
       sumExpr2,
       exprCols,
       sampleKeys: Object.keys(sp).slice(0, 8),
-      blankKeyValue: sp["0000"] ?? 0,
+      blankKeyValue: sp["n/a"] ?? 0,
       blankRowCount,
     };
   });
