@@ -11,6 +11,25 @@ import {
   type SpasialMode,
 } from "@/lib/spasialCore";
 
+/** Resolve value with blank-key aliases (n/a <-> 0000) and zero-pad variants. */
+function resolveValueForKey(
+  values: Record<string, number>,
+  k: string
+): number {
+  if (k in values) return values[k] ?? 0;
+  if (k === "n/a" && "0000" in values) return values["0000"] ?? 0;
+  if (k === "0000" && "n/a" in values) return values["n/a"] ?? 0;
+  const digits = k.replace(/\D/g, "");
+  if (digits) {
+    const padded = digits.slice(-4).padStart(4, "0");
+    if (padded in values) return values[padded] ?? 0;
+    const stripped = digits.replace(/^0+/, "") || "0";
+    const padded2 = stripped.padStart(4, "0");
+    if (padded2 in values) return values[padded2] ?? 0;
+  }
+  return 0;
+}
+
 async function ensureMonthSheet(
   sheetsApi: Awaited<ReturnType<typeof getSheetsClient>>,
   spreadsheetId: string,
@@ -61,15 +80,12 @@ function colToA1(colIdx: number): string {
 
 function findColIdx(headersClean: string[], label: string): number {
   const labelClean = label.toLowerCase().replace(/[\s_\-]/g, "");
-  // exact
   let colIdx = headersClean.findIndex((h) => h === labelClean);
   if (colIdx >= 0) return colIdx;
-  // contains
   colIdx = headersClean.findIndex(
     (h) => h.includes(labelClean) || labelClean.includes(h)
   );
   if (colIdx >= 0) return colIdx;
-  // aliases for common mismatches
   const aliases: Record<string, string[]> = {
     jumlahue: ["jumlahue", "jumlaue", "jumlahuang elektronik", "jumlahueberedar"],
     registered: ["registered", "ue registered"],
@@ -113,7 +129,6 @@ export async function processSpasialPrecomputed(opts: {
     };
   }
 
-  // dry-run without sheet access: report file match stats only
   if (opts.dryRun) {
     const results = opts.precomputed.map((t) => ({
       job: t.label,
@@ -122,7 +137,6 @@ export async function processSpasialPrecomputed(opts: {
       spatialKeys: t.spatialKeys,
       lsbuKeys: t.lsbuKeys,
       nonzero: Object.values(t.values).filter((v) => v !== 0).length,
-      // kartu diagnostics: harus sumExpr1 - sumExpr2
       sumExpr1: t.sumExpr1,
       sumExpr2: t.sumExpr2,
       exprCols: t.exprCols,
@@ -198,9 +212,9 @@ export async function processSpasialPrecomputed(opts: {
       let written = 0;
       for (let r = 1; r < grid.length; r++) {
         const k = keyByRow[r];
-        // include "0000" (blank lokasinasabah) — only skip empty key
+        // include "n/a" / "0000" (blank location) — only skip empty key
         if (!k) continue;
-        const val = pre.values[k] ?? 0;
+        const val = resolveValueForKey(pre.values, k);
         const cell =
           mode === "nom" || mode === "col_juta"
             ? Math.round(val * 100) / 100
