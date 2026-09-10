@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
-import { getSheetsClient } from "@/lib/sheets";
+import { getSheetsClient, exportSpreadsheetXlsx } from "@/lib/sheets";
 import { GROUPS } from "@/lib/tasks";
 
 export const runtime = "nodejs";
@@ -111,6 +111,23 @@ export async function GET(req: NextRequest) {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
           "Content-Disposition": `attachment; filename="${group}${bookSuffix}_${safeName}.csv"`,
+        },
+      });
+    }
+
+    // Debit (pilot): full-fidelity export via Drive (borders, colors, merges)
+    if (group === "debit" && (format === "xlsx" || format === "" || format === "full")) {
+      const { buffer, title } = await exportSpreadsheetXlsx(spreadsheetId);
+      const filename = `${group}${bookSuffix}_${title
+        .replace(/[^\w\-]+/g, "_")
+        .slice(0, 40)}.xlsx`;
+      return new NextResponse(new Uint8Array(buffer), {
+        status: 200,
+        headers: {
+          "Content-Type":
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+          "X-Export-Mode": "drive-full",
         },
       });
     }
