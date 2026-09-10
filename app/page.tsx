@@ -572,17 +572,17 @@ export default function HomePage() {
                 style={{ display: "block", marginTop: 6 }}
               />
             </label>
-            <p style={{ fontSize: 0.85, color: "var(--muted)" }}>
-              Spasial: file di-parse di browser lalu hanya hasil agregasi (~50–200 KB) dikirim ke server — aman untuk file besar.
+            <p style={{ margin: 0, fontSize: 0.85, color: "var(--muted)" }}>
+              {groupMeta?.lsbuNote}
             </p>
 
             <label>
-              Label bulan (opsional, default bulan sebelumnya)
+              Label bulan (opsional, contoh: Maret 2026)
               <input
                 type="text"
                 value={monthLabel}
                 onChange={(e) => setMonthLabel(e.target.value)}
-                placeholder="mis. Maret 2026"
+                placeholder="Kosong = bulan sebelumnya"
                 style={{
                   display: "block",
                   width: "100%",
@@ -599,20 +599,24 @@ export default function HomePage() {
                 checked={dryRun}
                 onChange={(e) => setDryRun(e.target.checked)}
               />
-              Dry-run (tidak menulis ke Google Sheets)
+              Dry-run (simulasi saja, tidak menulis data)
             </label>
 
-            <button type="submit" disabled={loading} className="btn primary">
+            <button type="submit" disabled={loading} style={{ padding: "12px 16px" }}>
               {loading ? "Memproses…" : dryRun ? "Dry-run" : "Proses & tulis"}
             </button>
           </div>
         </form>
 
         {progress && (
-          <p style={{ marginTop: 12, color: "var(--accent)" }}>{progress}</p>
+          <p style={{ marginTop: 16 }}>
+            <strong>Progress:</strong> {progress}
+          </p>
         )}
         {error && (
-          <p style={{ marginTop: 12, color: "var(--danger)" }}>{error}</p>
+          <p style={{ marginTop: 16, color: "crimson" }}>
+            <strong>Error:</strong> {error}
+          </p>
         )}
       </section>
 
@@ -621,9 +625,10 @@ export default function HomePage() {
           <h2>Hasil</h2>
           {log?.summary && (
             <p>
-              OK: {log.summary.ok} · Error: {log.summary.errors} · Total:{" "}
-              {log.summary.total}
-              {log.storage ? ` · ${log.storage}` : ""}
+              Total {log.summary.total} · OK {log.summary.ok} · Error{" "}
+              {log.summary.errors}
+              {log.monthLabel ? ` · Bulan: ${log.monthLabel}` : ""}
+              {log.dryRun ? " · dry-run" : ""}
             </p>
           )}
           <table>
@@ -637,16 +642,15 @@ export default function HomePage() {
             <tbody>
               {displayRows.map((r, i) => (
                 <tr key={i}>
-                  <td>{String(r.job || "")}</td>
-                  <td>{String(r.status || "")}</td>
+                  <td>{String(r.job ?? "")}</td>
+                  <td>{String(r.status ?? "")}</td>
                   <td style={{ fontSize: 0.85 }}>
                     {r.file ? `file=${String(r.file)} ` : ""}
                     {r.spatialKeys != null ? `spatial=${String(r.spatialKeys)} ` : ""}
                     {r.lsbuKeys != null ? `lsbu=${String(r.lsbuKeys)} ` : ""}
-                    {r.nonzero != null ? `nonzero=${String(r.nonzero)} ` : ""}
-                    {r.written != null ? `written=${String(r.written)} ` : ""}
                     {r.reason ? String(r.reason) : ""}
-                    {r.column ? `col=${String(r.column)}` : ""}
+                    {r.column ? `col=${String(r.column)} ` : ""}
+                    {r.written != null ? `written=${String(r.written)}` : ""}
                   </td>
                 </tr>
               ))}
@@ -656,30 +660,15 @@ export default function HomePage() {
       )}
 
       <section className="panel">
-        <h2>Download SPIP</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Laporan</th>
-              <th>Unduh</th>
-            </tr>
-          </thead>
-          <tbody>
-            {DOWNLOAD_ITEMS.map((d) => (
-              <tr key={d.id}>
-                <td>{d.title}</td>
-                <td>
-                  <a href={d.href} className="btn">
-                    XLSX
-                  </a>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <h2>Download template / hasil</h2>
+        <ul>
+          {DOWNLOAD_ITEMS.map((d) => (
+            <li key={d.id}>
+              <a href={d.href}>{d.title}</a>
+            </li>
+          ))}
+        </ul>
       </section>
-
-      <footer className="footer">Aplikasi Update SPIP</footer>
     </main>
   );
 }
