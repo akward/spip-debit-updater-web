@@ -128,18 +128,72 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 6): Promise<T> {
   throw last;
 }
 
-export async function analyzeDebitSpreadsheet(opts?: {
-  historicalMonths?: number;
-  dryRun?: boolean;
-}): Promise<AnalyzeResult> {
-  const historicalMonths = opts?.historicalMonths ?? 3;
-  const dryRun = opts?.dryRun ?? false;
+const ANALYZE_GROUPS = new Set([
+  "debit",
+  "ue",
+  "kk",
+  "acquirer",
+  "fraud_bank",
+  "fraud_penyebab",
+  "prop_channel",
+]);
 
-  const spreadsheetId = process.env.SHEET_DEBIT?.trim();
-  if (!spreadsheetId) {
-    throw new Error("Env SHEET_DEBIT belum di-set");
+export function isAnalyzeGroup(group: string): boolean {
+  return ANALYZE_GROUPS.has(group);
+}
+
+function resolveSpreadsheetIds(
+  group: string
+): { id: string; book?: string }[] {
+  const env = (k: string) => process.env[k]?.trim() || "";
+
+  if (group === "debit") {
+    const id = env("SHEET_DEBIT");
+    return id ? [{ id }] : [];
   }
+  if (group === "ue") {
+    const id = env("SHEET_UE");
+    return id ? [{ id }] : [];
+  }
+  if (group === "kk") {
+    const id = env("SHEET_KK");
+    return id ? [{ id }] : [];
+  }
+  if (group === "fraud_bank") {
+    const id = env("SHEET_FRAUD_BANK");
+    return id ? [{ id }] : [];
+  }
+  if (group === "fraud_penyebab") {
+    const id = env("SHEET_FRAUD_PENYEBAB");
+    return id ? [{ id }] : [];
+  }
+  if (group === "prop_channel") {
+    const id = env("SHEET_PROP_CHANNEL");
+    return id ? [{ id }] : [];
+  }
+  if (group === "acquirer") {
+    const out: { id: string; book?: string }[] = [];
+    const trx = env("SHEET_ACQUIRER_TRX");
+    const edc =
+      env("SHEET_ACQUIRER_EDC") ||
+      env("SHEET_ACQUIRER_TAHUN") ||
+      env("SHEET_ACQUIRER");
+    if (trx) out.push({ id: trx, book: "transaksi" });
+    if (edc && edc !== trx) out.push({ id: edc, book: "tahun" });
+    else if (edc) out.push({ id: edc, book: "tahun" });
+    return out;
+  }
+  return [];
+}
 
+async function analyzeOneSpreadsheet(opts: {
+  spreadsheetId: string;
+  group: string;
+  book?: string;
+  historicalMonths: number;
+  dryRun: boolean;
+}): Promise<AnalyzeSheetResult[]> {
+  const { spreadsheetId, historicalMonths, dryRun } = opts;
   const sheets = await getSheetsClient();
   const meta = await withRetry(() =>
     sheets.spreadsheets.get({
@@ -155,11 +209,12 @@ export async function analyzeDebitSpreadsheet(opts?: {
     })) || [];
 
   const results: AnalyzeSheetResult[] = [];
-  let totalFlagged = 0;
+  const bookPrefix = opts.book ? `[${opts.book}] ` : "";
 
   for (const { title, sheetId } of sheetList) {
     if (!title || sheetId == null) continue;
     const kind = metricKind(title);
+    const displayName = bookPrefix + title;
 
     const res = await withRetry(() =>
       sheets.spreadsheets.values.get({
@@ -171,7 +226,7 @@ export async function analyzeDebitSpreadsheet(opts?: {
     const rows = (res.data.values || []) as string[][];
     if (rows.length < 3) {
       results.push({
-        sheet: title,
+        sheet: displayName,
         kind,
         latestMonth: null,
         histMonths: [],
@@ -190,7 +245,7 @@ export async function analyzeDebitSpreadsheet(opts?: {
     }
     if (monthCols.length < 2) {
       results.push({
-        sheet: title,
+        sheet: displayName,
         kind,
         latestMonth: null,
         histMonths: [],
@@ -277,9 +332,8 @@ export async function analyzeDebitSpreadsheet(opts?: {
       }
     }
 
-    totalFlagged += flagRowIndices0.length;
     results.push({
-      sheet: title,
+      sheet: displayName,
       kind,
       latestMonth: latest.label,
       histMonths: histCols.map((h) => h.label),
@@ -288,11 +342,65 @@ export async function analyzeDebitSpreadsheet(opts?: {
     });
   }
 
+  return results;
+}
+
+/** Analisa anomali untuk group non-Spasial (Debit, UE, KK, Acquirer, Fraud, Prop). */
+export async function analyzeGroupSpreadsheet(opts: {
+  group: string;
+  historicalMonths?: number;
+  dryRun?: boolean;
+}): Promise<AnalyzeResult> {
+  const group = opts.group.toLowerCase();
+  const historicalMonths = opts.historicalMonths ?? 3;
+  const dryRun = opts.dryRun ?? false;
+
+  if (group.startsWith("spasial_")) {
+    throw new Error("Analisa anomali tidak diterapkan untuk Spasial");
+  }
+  if (!isAnalyzeGroup(group)) {
+    throw new Error(`Group tidak didukung untuk analisa: ${group}`);
+  }
+
+  const targets = resolveSpreadsheetIds(group);
+  if (!targets.length) {
+    throw new Error(
+      `Env spreadsheet untuk group '${group}' belum di-set (cek SHEET_* di Vercel)`
+    );
+  }
+
+  const allSheets: AnalyzeSheetResult[] = [];
+  let totalFlagged = 0;
+  const ids: string[] = [];
+
+  for (const t of targets) {
+    ids.push(t.id);
+    const part = await analyzeOneSpreadsheet({
+      spreadsheetId: t.id,
+      group,
+      book: t.book,
+      historicalMonths,
+      dryRun,
+    });
+    for (const s of part) {
+      totalFlagged += s.flagged;
+      allSheets.push(s);
+    }
+  }
+
   return {
     ok: true,
-    group: "debit",
-    spreadsheetId,
-    sheets: results,
+    group,
+    spreadsheetId: ids.join(","),
+    sheets: allSheets,
     totalFlagged,
   };
+}
+
+/** @deprecated alias */
+export async function analyzeDebitSpreadsheet(opts?: {
+  historicalMonths?: number;
+  dryRun?: boolean;
+}): Promise<AnalyzeResult> {
+  return analyzeGroupSpreadsheet({ group: "debit", ...opts });
 }
