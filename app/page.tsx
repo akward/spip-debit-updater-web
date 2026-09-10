@@ -480,57 +480,57 @@ export default function HomePage() {
     <main className="container">
       <header className="header">
         <div>
+          <p className="header-eyebrow">SPIP · Data ops</p>
           <h1>Aplikasi Update SPIP</h1>
-          <p>Update data laporan SPIP.</p>
+          <p>Unggah file sumber, jalankan dry-run atau proses, lalu tinjau hasil per job.</p>
         </div>
       </header>
 
       <section className="panel">
-        <h2>Panduan file LSBU per group</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Group</th>
-              <th>File LSBU</th>
-              <th>Keterangan</th>
-            </tr>
-          </thead>
-          <tbody>
-            {GROUPS.map((g) => (
-              <tr key={g.id}>
-                <td>
-                  <strong>{g.title}</strong>
-                </td>
-                <td>
-                  {g.lsbu ? (
-                    <code>{g.lsbu}</code>
-                  ) : (
-                    <span style={{ color: "var(--muted)" }}>Tidak ada</span>
-                  )}
-                </td>
-                <td style={{ fontSize: 0.9 }}>{g.lsbuNote}</td>
+        <div className="panel-head">
+          <h2>Panduan file LSBU</h2>
+          <p className="panel-hint">Per group proses</p>
+        </div>
+        <div className="table-wrap">
+          <table className="guide-table">
+            <thead>
+              <tr>
+                <th>Group</th>
+                <th>File LSBU</th>
+                <th>Keterangan</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {GROUPS.map((g) => (
+                <tr key={g.id}>
+                  <td>{g.title}</td>
+                  <td>
+                    {g.lsbu ? (
+                      <code>{g.lsbu}</code>
+                    ) : (
+                      <span style={{ color: "var(--muted)" }}>Tidak ada</span>
+                    )}
+                  </td>
+                  <td>{g.lsbuNote}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="panel">
-        <h2>Upload & proses</h2>
+        <div className="panel-head">
+          <h2>Upload & proses</h2>
+        </div>
         <form onSubmit={onSubmit}>
-          <div style={{ display: "grid", gap: 12, maxWidth: 640 }}>
-            <label>
-              Group
+          <div className="form-grid">
+            <label className="field">
+              <span className="field-label">Group</span>
               <select
+                className="control"
                 value={group}
                 onChange={(e) => setGroup(e.target.value)}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  marginTop: 6,
-                  padding: 10,
-                  borderRadius: 8,
-                }}
               >
                 {GROUPS.map((g) => (
                   <option key={g.id} value={g.id}>
@@ -540,81 +540,81 @@ export default function HomePage() {
               </select>
             </label>
 
-            <label>
-              File CSV (opsional — kosong = copy bulan sebelumnya)
+            <label className="field">
+              <span className="field-label">File CSV</span>
               <input
+                className="control"
                 type="file"
                 accept=".csv,text/csv"
                 multiple
                 onChange={(e) => setFiles(e.target.files)}
-                style={{ display: "block", marginTop: 6 }}
               />
+              <p className="field-note">Opsional — kosong = salin bulan sebelumnya</p>
             </label>
 
-            <label>
-              File LSBU (.xlsx) — bisa lebih dari satu (Acquirer: 0304 + 0303)
+            <label className="field">
+              <span className="field-label">File LSBU (.xlsx)</span>
               <input
+                className="control"
                 type="file"
                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 multiple
                 onChange={(e) => setLsbuFiles(e.target.files)}
-                style={{ display: "block", marginTop: 6 }}
               />
+              <p className="field-note">Bisa lebih dari satu (Acquirer: 0304 + 0303)</p>
             </label>
 
-            <label>
-              File Spasial (.xlsx) — multi file (ATM/UE/KK Spasial)
+            <label className="field">
+              <span className="field-label">File Spasial (.xlsx)</span>
               <input
+                className="control"
                 type="file"
                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 multiple
                 onChange={(e) => setSpatialFiles(e.target.files)}
-                style={{ display: "block", marginTop: 6 }}
               />
+              <p className="field-note">{groupMeta?.lsbuNote}</p>
             </label>
-            <p style={{ margin: 0, fontSize: 0.85, color: "var(--muted)" }}>
-              {groupMeta?.lsbuNote}
-            </p>
 
-            <label>
-              Label bulan (opsional, contoh: Maret 2026)
+            <label className="field">
+              <span className="field-label">Label bulan</span>
               <input
+                className="control"
                 type="text"
                 value={monthLabel}
                 onChange={(e) => setMonthLabel(e.target.value)}
-                placeholder="Kosong = bulan sebelumnya"
-                style={{
-                  display: "block",
-                  width: "100%",
-                  marginTop: 6,
-                  padding: 10,
-                  borderRadius: 8,
-                }}
+                placeholder="Kosong = bulan sebelumnya (contoh: Maret 2026)"
               />
             </label>
 
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label className="check-row">
               <input
                 type="checkbox"
                 checked={dryRun}
                 onChange={(e) => setDryRun(e.target.checked)}
               />
-              Dry-run (simulasi saja, tidak menulis data)
+              <span>Dry-run (simulasi saja, tidak menulis data)</span>
             </label>
 
-            <button type="submit" disabled={loading} style={{ padding: "12px 16px" }}>
-              {loading ? "Memproses…" : dryRun ? "Dry-run" : "Proses & tulis"}
-            </button>
+            <div className="btn-row">
+              <button
+                className="btn btn-primary"
+                type="submit"
+                disabled={loading}
+              >
+                {loading ? "Memproses…" : dryRun ? "Jalankan dry-run" : "Proses & tulis"}
+              </button>
+            </div>
           </div>
         </form>
 
         {progress && (
-          <p style={{ marginTop: 16 }}>
+          <p className="status status-progress">
             <strong>Progress:</strong> {progress}
           </p>
         )}
         {error && (
-          <p style={{ marginTop: 16, color: "crimson" }}>
+          <p className="status status-error">
             <strong>Error:</strong> {error}
           </p>
         )}
@@ -622,46 +622,72 @@ export default function HomePage() {
 
       {displayRows.length > 0 && (
         <section className="panel">
-          <h2>Hasil</h2>
+          <div className="panel-head">
+            <h2>Hasil</h2>
+          </div>
           {log?.summary && (
-            <p>
-              Total {log.summary.total} · OK {log.summary.ok} · Error{" "}
-              {log.summary.errors}
-              {log.monthLabel ? ` · Bulan: ${log.monthLabel}` : ""}
-              {log.dryRun ? " · dry-run" : ""}
-            </p>
+            <div className="summary-row">
+              <span className="chip chip-muted">Total {log.summary.total}</span>
+              <span className="chip chip-ok">OK {log.summary.ok}</span>
+              <span className={`chip ${log.summary.errors ? "chip-err" : "chip-muted"}`}>
+                Error {log.summary.errors}
+              </span>
+              {log.monthLabel ? (
+                <span className="chip chip-muted">Bulan: {log.monthLabel}</span>
+              ) : null}
+              {log.dryRun ? (
+                <span className="chip chip-muted">dry-run</span>
+              ) : null}
+            </div>
           )}
-          <table>
-            <thead>
-              <tr>
-                <th>Job</th>
-                <th>Status</th>
-                <th>Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayRows.map((r, i) => (
-                <tr key={i}>
-                  <td>{String(r.job ?? "")}</td>
-                  <td>{String(r.status ?? "")}</td>
-                  <td style={{ fontSize: 0.85 }}>
-                    {r.file ? `file=${String(r.file)} ` : ""}
-                    {r.spatialKeys != null ? `spatial=${String(r.spatialKeys)} ` : ""}
-                    {r.lsbuKeys != null ? `lsbu=${String(r.lsbuKeys)} ` : ""}
-                    {r.reason ? String(r.reason) : ""}
-                    {r.column ? `col=${String(r.column)} ` : ""}
-                    {r.written != null ? `written=${String(r.written)}` : ""}
-                  </td>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Job</th>
+                  <th>Status</th>
+                  <th>Detail</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {displayRows.map((r, i) => {
+                  const st = String(r.status ?? "");
+                  const stClass =
+                    st === "ok" || st === "copy-previous"
+                      ? "status-ok-text"
+                      : st === "error"
+                        ? "status-error-text"
+                        : st === "warn"
+                          ? "status-warn-text"
+                          : "";
+                  return (
+                    <tr key={i}>
+                      <td>{String(r.job ?? "")}</td>
+                      <td className={`status-cell ${stClass}`}>{st}</td>
+                      <td className="detail-mono">
+                        {r.file ? `file=${String(r.file)} ` : ""}
+                        {r.spatialKeys != null
+                          ? `spatial=${String(r.spatialKeys)} `
+                          : ""}
+                        {r.lsbuKeys != null ? `lsbu=${String(r.lsbuKeys)} ` : ""}
+                        {r.reason ? String(r.reason) : ""}
+                        {r.column ? `col=${String(r.column)} ` : ""}
+                        {r.written != null ? `written=${String(r.written)}` : ""}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 
       <section className="panel">
-        <h2>Download template / hasil</h2>
-        <ul>
+        <div className="panel-head">
+          <h2>Download template / hasil</h2>
+        </div>
+        <ul className="download-list">
           {DOWNLOAD_ITEMS.map((d) => (
             <li key={d.id}>
               <a href={d.href}>{d.title}</a>
@@ -669,6 +695,8 @@ export default function HomePage() {
           ))}
         </ul>
       </section>
+
+      <footer className="footer">Aplikasi Update SPIP</footer>
     </main>
   );
 }
