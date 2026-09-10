@@ -200,6 +200,12 @@ export default function HomePage() {
   const [liveRows, setLiveRows] = useState<Array<Record<string, unknown>>>([]);
   const [log, setLog] = useState<ProcessResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [analyzeLoading, setAnalyzeLoading] = useState(false);
+  const [analyzeLog, setAnalyzeLog] = useState<{
+    totalFlagged?: number;
+    sheets?: Array<Record<string, unknown>>;
+    error?: string;
+  } | null>(null);
 
   const groupMeta = GROUPS.find((g) => g.id === group);
 
@@ -303,6 +309,28 @@ export default function HomePage() {
     if (!res.ok || data.ok === false)
       throw new Error(data.error || "Gagal memproses");
     return data;
+  }
+
+  async function onAnalyze() {
+    setError(null);
+    setAnalyzeLog(null);
+    setAnalyzeLoading(true);
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ group: "debit", dryRun: false }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.ok === false) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      setAnalyzeLog(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAnalyzeLoading(false);
+    }
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -527,10 +555,21 @@ export default function HomePage() {
               <button
                 className="btn btn-primary"
                 type="submit"
-                disabled={loading}
+                disabled={loading || analyzeLoading}
               >
                 {loading ? "Memproses…" : dryRun ? "Jalankan dry-run" : "Proses & tulis"}
               </button>
+              {group === "debit" && (
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  disabled={loading || analyzeLoading}
+                  onClick={() => onAnalyze()}
+                  title="Tandai kuning sel anomali di kolom bulan terakhir (Vol/Nom/Count)"
+                >
+                  {analyzeLoading ? "Analisa…" : "Analisa anomali (Debit)"}
+                </button>
+              )}
             </div>
           </div>
         </form>
@@ -605,6 +644,52 @@ export default function HomePage() {
               </tbody>
             </table>
           </div>
+        </section>
+      )}
+
+      {analyzeLog && (
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Hasil analisa anomali (Debit)</h2>
+            <p className="panel-hint">
+              Kolom bulan terakhir diwarnai kuning jika mencurigakan (rule nol + z-score, terpisah Vol/Nom/Count)
+            </p>
+          </div>
+          <div className="summary-row">
+            <span className="chip chip-muted">
+              Ditandai {analyzeLog.totalFlagged ?? 0} sel
+            </span>
+          </div>
+          {analyzeLog.sheets && (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Sheet</th>
+                    <th>Jenis</th>
+                    <th>Bulan</th>
+                    <th>Flag</th>
+                    <th>Ket</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {analyzeLog.sheets.map((s, i) => (
+                    <tr key={i}>
+                      <td>{String(s.sheet ?? "")}</td>
+                      <td>{String(s.kind ?? "")}</td>
+                      <td>{String(s.latestMonth ?? "-")}</td>
+                      <td>{String(s.flagged ?? 0)}</td>
+                      <td className="detail-mono">
+                        {s.skipped
+                          ? String(s.skipped)
+                          : `hist=${Array.isArray(s.histMonths) ? s.histMonths.join(", ") : ""} rows=${String(s.rowsScanned ?? "")}`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       )}
 
