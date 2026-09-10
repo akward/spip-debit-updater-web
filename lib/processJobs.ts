@@ -421,8 +421,8 @@ export async function processOneJob(opts: {
     monthLabel,
     valuesById: map,
     copyIfEmpty: true,
-    // Debit only (pilot): thin borders on month column like existing sheet
-    applyBorders: job.spreadsheetEnv === "SHEET_DEBIT",
+    // All non-Spasial column jobs (Spasial uses separate write path)
+    applyBorders: true,
   });
   outRows.push({
     job: job.name,
