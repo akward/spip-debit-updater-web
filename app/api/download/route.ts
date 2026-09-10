@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import * as XLSX from "xlsx";
 import { getSheetsClient, exportSpreadsheetXlsx } from "@/lib/sheets";
 import { GROUPS } from "@/lib/tasks";
 
@@ -115,8 +114,8 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Debit (pilot): full-fidelity export via Drive (borders, colors, merges)
-    if (group === "debit" && (format === "xlsx" || format === "" || format === "full")) {
+    // Full-fidelity .xlsx via Drive export (borders, colors, merges) — all groups
+    if (format === "xlsx" || format === "" || format === "full") {
       const { buffer, title } = await exportSpreadsheetXlsx(spreadsheetId);
       const filename = `${group}${bookSuffix}_${title
         .replace(/[^\w\-]+/g, "_")
@@ -132,41 +131,10 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const wb = XLSX.utils.book_new();
-    const tabs = titles.length
-      ? titles
-      : [...new Set((GROUPS[group] || []).map((j) => j.sheetName))];
-
-    for (const title of tabs) {
-      const safe = title.replace(/'/g, "''");
-      try {
-        const res = await sheetsApi.spreadsheets.values.get({
-          spreadsheetId,
-          range: `'${safe}'`,
-          majorDimension: "ROWS",
-        });
-        const rows = (res.data.values || []) as string[][];
-        const ws = XLSX.utils.aoa_to_sheet(rows.length ? rows : [["(kosong)"]]);
-        XLSX.utils.book_append_sheet(wb, ws, title.slice(0, 31));
-      } catch {
-        const ws = XLSX.utils.aoa_to_sheet([["(gagal baca tab)", title]]);
-        XLSX.utils.book_append_sheet(wb, ws, title.slice(0, 31));
-      }
-    }
-
-    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
-    const filename = `${group}${bookSuffix}_${bookTitle
-      .replace(/[^\w\-]+/g, "_")
-      .slice(0, 40)}.xlsx`;
-
-    return new NextResponse(new Uint8Array(buf), {
-      status: 200,
-      headers: {
-        "Content-Type":
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-      },
-    });
+    return NextResponse.json(
+      { ok: false, error: `Format tidak didukung: ${format || "(kosong)"}` },
+      { status: 400 }
+    );
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : String(e) },
