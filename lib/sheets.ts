@@ -20,7 +20,7 @@ export function loadCredentials(): Creds {
       "GOOGLE_CREDENTIALS_JSON tidak valid (butuh client_email & private_key)."
     );
   }
-  parsed.private_key = parsed.private_key.replace(/\\n/g, "\n");
+  parsed.private_key = parsed.private_key.replace(/\n/g, "\n");
   return parsed;
 }
 
@@ -36,6 +36,47 @@ export async function getSheetsClient() {
   });
   await auth.authorize();
   return google.sheets({ version: "v4", auth });
+}
+
+/** Full-fidelity .xlsx via Drive export (borders, fills, merges preserved by Google). */
+export async function exportSpreadsheetXlsx(
+  spreadsheetId: string
+): Promise<{ buffer: Buffer; title: string }> {
+  const creds = loadCredentials();
+  const auth = new google.auth.JWT({
+    email: creds.client_email,
+    key: creds.private_key,
+    scopes: [
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/drive",
+    ],
+  });
+  await auth.authorize();
+  const drive = google.drive({ version: "v3", auth });
+
+  const meta = await drive.files.get({
+    fileId: spreadsheetId,
+    fields: "name, mimeType",
+    supportsAllDrives: true,
+  });
+  const title = String(meta.data.name || spreadsheetId);
+  const mime = String(meta.data.mimeType || "");
+  if (mime && !mime.includes("spreadsheet")) {
+    throw new Error(
+      `File bukan Google Spreadsheet (mime=${mime}). Drive export hanya untuk sheet native.`
+    );
+  }
+
+  const res = await drive.files.export(
+    {
+      fileId: spreadsheetId,
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    },
+    { responseType: "arraybuffer" }
+  );
+  const data = res.data as ArrayBuffer;
+  return { buffer: Buffer.from(data), title };
 }
 
 function colToA1(col: number): string {
@@ -118,7 +159,7 @@ export async function updateMonthColumn(opts: {
   dataStartRow?: number;
   keyHeader?: string;
   copyIfEmpty?: boolean;
-  /** Debit: apply thin cell borders on the month column (header + data). */
+  /** Thin cell borders on the month column (header + data). Non-Spasial column jobs. */
   applyBorders?: boolean;
 }): Promise<{
   written: number;
@@ -210,7 +251,6 @@ export async function updateMonthColumn(opts: {
 
   const maybeBorders = async (rowCount: number) => {
     if (!applyBorders || sheetId == null || rowCount <= 0) return;
-    // header row + data rows (0-based indices for API)
     await applyColumnBorders(
       sheets,
       spreadsheetId,
@@ -304,7 +344,6 @@ export async function updateMonthColumn(opts: {
     );
   }
 
-  // ID baru hanya ditambahkan jika nilai bukan 0
   const existing = new Set(
     dataRows
       .map((r) => normalizeId(r?.[kIdx] ?? ""))
