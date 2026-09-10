@@ -71,6 +71,44 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 8): Promise<T> {
   throw last;
 }
 
+/** Thin black grid borders on a column range (header + data), matching existing Debit sheet style. */
+async function applyColumnBorders(
+  sheets: Awaited<ReturnType<typeof getSheetsClient>>,
+  spreadsheetId: string,
+  sheetId: number,
+  startRowIndex: number,
+  endRowIndex: number,
+  colIndex0: number
+) {
+  if (endRowIndex <= startRowIndex) return;
+  const style = { style: "SOLID" as const, width: 1, color: { red: 0, green: 0, blue: 0 } };
+  await withRetry(() =>
+    sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            updateBorders: {
+              range: {
+                sheetId,
+                startRowIndex,
+                endRowIndex,
+                startColumnIndex: colIndex0,
+                endColumnIndex: colIndex0 + 1,
+              },
+              top: style,
+              bottom: style,
+              left: style,
+              right: style,
+              innerHorizontal: style,
+            },
+          },
+        ],
+      },
+    })
+  );
+}
+
 export async function updateMonthColumn(opts: {
   spreadsheetId: string;
   sheetName: string;
@@ -80,6 +118,8 @@ export async function updateMonthColumn(opts: {
   dataStartRow?: number;
   keyHeader?: string;
   copyIfEmpty?: boolean;
+  /** Debit: apply thin cell borders on the month column (header + data). */
+  applyBorders?: boolean;
 }): Promise<{
   written: number;
   appended: number;
@@ -96,6 +136,7 @@ export async function updateMonthColumn(opts: {
     dataStartRow = 4,
     keyHeader = "No",
     copyIfEmpty = true,
+    applyBorders = false,
   } = opts;
 
   const sheets = await getSheetsClient();
@@ -106,7 +147,12 @@ export async function updateMonthColumn(opts: {
       fields: "sheets.properties",
     })
   );
-  const titles = meta.data.sheets?.map((s) => String(s.properties?.title || "")) || [];
+  const sheetProps =
+    meta.data.sheets?.map((s) => ({
+      title: String(s.properties?.title || ""),
+      sheetId: s.properties?.sheetId as number | undefined,
+    })) || [];
+  const titles = sheetProps.map((s) => s.title);
   let resolved =
     titles.find((t) => t === sheetName) ||
     titles.find((t) => t.trim().toLowerCase() === sheetName.trim().toLowerCase()) ||
@@ -121,6 +167,7 @@ export async function updateMonthColumn(opts: {
     );
   }
   const effectiveName = resolved;
+  const sheetId = sheetProps.find((s) => s.title === effectiveName)?.sheetId;
 
   const rangeAll = `'${effectiveName.replace(/'/g, "''")}'!A1:AZ5000`;
   const res = await withRetry(() =>
@@ -161,6 +208,19 @@ export async function updateMonthColumn(opts: {
   const dataRows = rows.slice(dataStartRow - 1);
   const nRows = dataRows.length;
 
+  const maybeBorders = async (rowCount: number) => {
+    if (!applyBorders || sheetId == null || rowCount <= 0) return;
+    // header row + data rows (0-based indices for API)
+    await applyColumnBorders(
+      sheets,
+      spreadsheetId,
+      sheetId,
+      headerRow - 1,
+      dataStartRow - 1 + rowCount,
+      colIndex
+    );
+  };
+
   const hasAny = [...valuesById.values()].some((v) => v !== 0);
   if (copyIfEmpty && (!valuesById.size || !hasAny)) {
     const prev =
@@ -185,6 +245,7 @@ export async function updateMonthColumn(opts: {
           })
         );
       }
+      await maybeBorders(values.length);
       return {
         written: values.length,
         appended: 0,
@@ -204,6 +265,7 @@ export async function updateMonthColumn(opts: {
         })
       );
     }
+    await maybeBorders(zeros.length);
     return {
       written: zeros.length,
       appended: 0,
@@ -272,6 +334,7 @@ export async function updateMonthColumn(opts: {
     );
   }
 
+  await maybeBorders(colValues.length);
   await sleep(700);
   return {
     written,
