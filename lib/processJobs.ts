@@ -96,6 +96,31 @@ function pickUeTransferFile(
   return undefined;
 }
 
+/** Satu file Delivery Channel.csv untuk semua job Prop (filter channel+trx di buildValueMap). */
+function pickPropChannelFile(
+  parsed: { name: string; rows: Row[] }[]
+): { name: string; rows: Row[] } | undefined {
+  const scored: { f: { name: string; rows: Row[] }; score: number }[] = [];
+  for (const f of parsed) {
+    const b = basename(f.name);
+    let score = 0;
+    if (b.includes("delivery") && b.includes("channel")) score += 100;
+    else if (b.includes("delivery_channel") || b.includes("deliverychannel")) score += 100;
+    else if (b.includes("prop_channel") || b.includes("prop channel")) score += 80;
+    else if (b.includes("delivery")) score += 40;
+    if (f.rows.length) {
+      const keys = Object.keys(f.rows[0] || {}).map((k) => k.toLowerCase());
+      if (keys.some((k) => k.includes("jenisdeliverychannel") || k.includes("deliverychannel")))
+        score += 50;
+      if (keys.some((k) => k.includes("jenistransaksi"))) score += 20;
+      if (keys.some((k) => k === "volume" || k === "nominal")) score += 10;
+    }
+    if (score > 0) scored.push({ f, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0]?.f;
+}
+
 export async function processOneJob(opts: {
   job: SheetJob;
   group: string;
@@ -110,7 +135,9 @@ export async function processOneJob(opts: {
   let file =
     group === "ue" && job.name.toLowerCase().includes("transfer")
       ? pickUeTransferFile(parsed, job.name) || findBestFile(parsed, job.fileHints)
-      : findBestFile(parsed, job.fileHints);
+      : group === "prop_channel"
+        ? pickPropChannelFile(parsed) || findBestFile(parsed, job.fileHints)
+        : findBestFile(parsed, job.fileHints);
 
   let map = new Map<string, number>();
   let source: "csv" | "none" = "none";
@@ -124,7 +151,8 @@ export async function processOneJob(opts: {
       job.divideBy,
       job.keyColumn,
       job.filterJenis,
-      job.filterMesin
+      job.filterMesin,
+      job.filterChannel
     );
   }
 
@@ -359,6 +387,7 @@ export async function processOneJob(opts: {
       source: matrixRows?.length ? (file ? "csv+lsbu" : "lsbu") : source,
       filterJenis: job.filterJenis || null,
       filterMesin: job.filterMesin || null,
+      filterChannel: job.filterChannel || null,
       sample: [...map.entries()].slice(0, 3),
     });
     return outRows;
