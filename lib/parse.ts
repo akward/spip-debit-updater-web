@@ -28,7 +28,16 @@ export function parseCsvText(text: string): Row[] {
       dynamicTyping: false,
     });
   }
-  return (parsed.data || []).filter((r) => Object.keys(r).length > 0);
+  const rows = (parsed.data || []).filter((r) => Object.keys(r).length > 0);
+  // Strip BOM from header keys (Excel/CSV often emits \ufeff on first column)
+  return rows.map((row) => {
+    const out: Row = {};
+    for (const [k, v] of Object.entries(row)) {
+      const key = k.replace(/^\ufeff/, "").trim();
+      out[key] = v;
+    }
+    return out;
+  });
 }
 
 function pick(row: Row, names: string[]): string | undefined {
