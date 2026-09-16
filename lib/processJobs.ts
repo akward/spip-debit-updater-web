@@ -96,28 +96,46 @@ function pickUeTransferFile(
   return undefined;
 }
 
-/** Satu file Delivery Channel.csv untuk semua job Prop (filter channel+trx di buildValueMap). */
+/** Satu file Delivery Channel (atau CSV bertipe kanal) untuk semua job Prop. */
 function pickPropChannelFile(
   parsed: { name: string; rows: Row[] }[]
 ): { name: string; rows: Row[] } | undefined {
+  if (!parsed.length) return undefined;
   const scored: { f: { name: string; rows: Row[] }; score: number }[] = [];
   for (const f of parsed) {
     const b = basename(f.name);
+    const keys = f.rows.length
+      ? Object.keys(f.rows[0] || {}).map((k) =>
+          k.replace(/^\ufeff/, "").trim().toLowerCase()
+        )
+      : [];
     let score = 0;
+    // Nama file
     if (b.includes("delivery") && b.includes("channel")) score += 100;
     else if (b.includes("delivery_channel") || b.includes("deliverychannel")) score += 100;
-    else if (b.includes("prop_channel") || b.includes("prop channel")) score += 80;
-    else if (b.includes("delivery")) score += 40;
-    if (f.rows.length) {
-      const keys = Object.keys(f.rows[0] || {}).map((k) => k.toLowerCase());
-      if (keys.some((k) => k.includes("jenisdeliverychannel") || k.includes("deliverychannel")))
-        score += 50;
-      if (keys.some((k) => k.includes("jenistransaksi"))) score += 20;
-      if (keys.some((k) => k === "volume" || k === "nominal")) score += 10;
-    }
+    else if (b.includes("prop_channel") || b.includes("prop channel") || b.includes("propchannel"))
+      score += 80;
+    else if (b.includes("delivery") || b.includes("kanal")) score += 40;
+    // Struktur kolom (lebih andal daripada nama file)
+    const hasChannel = keys.some(
+      (k) =>
+        k.includes("jenisdeliverychannel") ||
+        k.includes("deliverychannel") ||
+        k === "channel"
+    );
+    const hasTrx = keys.some((k) => k.includes("jenistransaksi") || k === "jenis");
+    const hasVol = keys.some((k) => k === "volume" || k.includes("frekuensi"));
+    const hasNom = keys.some((k) => k === "nominal" || k.includes("nilai"));
+    if (hasChannel) score += 120;
+    if (hasTrx) score += 40;
+    if (hasVol) score += 20;
+    if (hasNom) score += 20;
     if (score > 0) scored.push({ f, score });
   }
   scored.sort((a, b) => b.score - a.score);
+  if (scored[0] && scored[0].score >= 100) return scored[0].f;
+  // Fallback: satu-satunya CSV yang di-upload untuk group prop
+  if (parsed.length === 1) return parsed[0];
   return scored[0]?.f;
 }
 
