@@ -12,6 +12,9 @@ import { processSpasialGroup, spasialTasksForGroup } from "@/lib/spasial";
 import { processSpasialPrecomputed } from "@/lib/spasialWrite";
 import type { PrecomputedTask } from "@/lib/spasialCore";
 
+/** Bump when Prop Channel / parse logic changes — muncul di response. */
+export const CODE_VERSION = "2026-09-16-prop-v3";
+
 export async function runProcess(req: NextRequest) {
   try {
     const form = await req.formData();
@@ -24,7 +27,6 @@ export async function runProcess(req: NextRequest) {
 
     const isSpasial = group.startsWith("spasial_");
 
-    // Client-side precomputed (compact JSON) — bypasses Vercel 4.5MB upload limit
     const precomputedRaw = form.get("spasialPrecomputed");
     let precomputed: PrecomputedTask[] | null = null;
     if (precomputedRaw && typeof precomputedRaw === "string") {
@@ -75,7 +77,6 @@ export async function runProcess(req: NextRequest) {
     }
 
     if (isSpasial) {
-      // Prefer client precomputed path (small JSON)
       if (precomputed && precomputed.length) {
         const tasks = spasialTasksForGroup(group)!;
         if (wantStream && !dryRun) {
@@ -115,6 +116,7 @@ export async function runProcess(req: NextRequest) {
                   monthLabel,
                   dryRun: false,
                   storage: "client-parse",
+                  codeVersion: CODE_VERSION,
                   summary: out.summary,
                   results: out.results,
                 });
@@ -150,6 +152,7 @@ export async function runProcess(req: NextRequest) {
           monthLabel,
           dryRun,
           storage: "client-parse",
+          codeVersion: CODE_VERSION,
           summary: out.summary,
           results: out.results,
         });
@@ -207,6 +210,7 @@ export async function runProcess(req: NextRequest) {
                 group,
                 monthLabel,
                 dryRun: false,
+                codeVersion: CODE_VERSION,
                 summary: out.summary,
                 results: out.results,
                 files: spatialBufs.map((p) => ({ name: p.name, rows: 0 })),
@@ -247,6 +251,7 @@ export async function runProcess(req: NextRequest) {
         group,
         monthLabel,
         dryRun,
+        codeVersion: CODE_VERSION,
         summary: out.summary,
         results: out.results,
         files: spatialBufs.map((p) => ({ name: p.name, rows: 0 })),
@@ -372,6 +377,7 @@ export async function runProcess(req: NextRequest) {
               monthLabel,
               dryRun,
               storage: "none — CSV/LSBU hanya memori",
+              codeVersion: CODE_VERSION,
               lsbu: lsbuBundles.map((b) => ({
                 name: b.name,
                 kind: b.kind,
@@ -452,6 +458,7 @@ export async function runProcess(req: NextRequest) {
       monthLabel,
       dryRun,
       storage: "none — CSV/LSBU hanya memori",
+      codeVersion: CODE_VERSION,
       lsbu: lsbuBundles.map((b) => ({
         name: b.name,
         kind: b.kind,
