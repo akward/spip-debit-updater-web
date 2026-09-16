@@ -108,6 +108,7 @@ type ProcessResponse = {
   files?: { name: string; rows: number }[];
   summary?: { total: number; errors: number; ok: number };
   results?: Array<Record<string, unknown>>;
+  codeVersion?: string;
 };
 
 function handleSseEvent(
@@ -346,6 +347,14 @@ export default function HomePage() {
       const lsbuList = lsbuFiles ? Array.from(lsbuFiles) : [];
       const csvList = files ? Array.from(files) : [];
 
+      if (group === "prop_channel" && csvList.length === 0) {
+        setError(
+          "Prop Channel wajib upload File CSV: Delivery Channel.csv (bukan LSBU)."
+        );
+        setLoading(false);
+        return;
+      }
+
       if (isSpasial) {
         setProgress("Memuat library xlsx…");
         const XLSX = await import("xlsx");
@@ -583,6 +592,11 @@ export default function HomePage() {
         <section className="panel">
           <div className="panel-head">
             <h2>Hasil</h2>
+            {log?.codeVersion != null && (
+              <p className="panel-hint">
+                code={String(log.codeVersion)} · files={JSON.stringify(log.files || [])}
+              </p>
+            )}
           </div>
           <div className="table-wrap">
             <table className="result-table">
