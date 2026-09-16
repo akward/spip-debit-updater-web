@@ -49,7 +49,7 @@ export const UE_JOBS: SheetJob[] = [
   { name: "Server Based", sheetName: "Server Based", fileHints: ["server_base", "serverbased"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
   { name: "Registered", sheetName: "Registered", fileHints: ["registered"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
   { name: "Unregistered", sheetName: "Unregistered", fileHints: ["unregistered"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
-  { name: "Dana Float", sheetName: "Dana Float", fileHints: ["dana_float", "danafloat"], valueColumn: "jumlah", divideBy: 1, spreadsheetEnv: U },
+  { name: "Dana Float", sheetName: "Dana Float", fileHints: ["dana_float", "danafloat"], valueColumn: "jumlah", divideBy: 1_000_000, spreadsheetEnv: U },
   { name: "Jumlah Reader", sheetName: "Jumlah Reader", fileHints: ["jumlah_reader"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: U },
   { name: "Volume Belanja", sheetName: "Volume", fileHints: ["belanja"], valueColumn: "expr_1", divideBy: 1, spreadsheetEnv: U },
   { name: "Nilai Belanja", sheetName: "Nilai", fileHints: ["belanja"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: U },
