@@ -10,6 +10,8 @@ export type SheetJob = {
   filterJenis?: string;
   /** Filter baris raw CSV berdasarkan jenismesin (Acquirer) */
   filterMesin?: string[];
+  /** Filter jenisdeliverychannel (Prop Channel: SM=Mobile, IN=Internet, PH=Phone) */
+  filterChannel?: string;
 };
 
 const D = "SHEET_DEBIT";
@@ -151,50 +153,71 @@ export const FRAUD_PENYEBAB_JOBS: SheetJob[] = [
 
 /**
  * Prop Channel jobs.
- * Sheet naming di spreadsheet tidak konsisten untuk VA:
- * - Phone  → "Phone Vol Virtual Account" / "Phone Nom Virtual Account"
- * - Mobile → "Mobile Vol VA" / "Mobile Nom VA"
- * - Internet → biasanya "Internet Vol VA" (jika ada)
- * Label job tetap singkat (Phone Vol VA) agar mudah dibaca di UI.
+ * Sumber modern: satu file "Delivery Channel.csv" dengan kolom
+ *   jenisdeliverychannel (PH/SM/IN) + jenistransaksi (TRI/TRA/BY/BL/IVA/RV/TT/ST)
+ *   volume / nominal
+ * Legacy: file terpisah Prop_Channel_-_Phone_Banking_*.csv (fileHints p_*/m_*/i_*).
+ * Sheet naming VA: Phone → "Virtual Account", Mobile/Internet → "VA".
  */
-function propJobs(prefix: string, sheetPrefix: string, filePrefix: string): SheetJob[] {
-  const kinds: [string, string, string][] = [
-    ["Interbank", "Interbank", "interbank"],
-    ["Antarbank", "Antarbank", "intrabank"],
-    ["Pembayaran", "Pembayaran", "pembayaran"],
-    ["Belanja", "Belanja", "belanja"],
-    // sheetSuffix khusus: Phone pakai "Virtual Account", yang lain "VA"
-    ["VA", prefix === "Phone" ? "Virtual Account" : "VA", "va"],
-    ["Reversal", "Reversal", "reversal"],
-    ["Tarik Tunai", "Tarik Tunai", "tarik"],
-    ["Setor Tunai", "Setor Tunai", "setor"],
+function propJobs(
+  prefix: string,
+  sheetPrefix: string,
+  filePrefix: string,
+  channelCode: string
+): SheetJob[] {
+  // [label, sheetSuffix, filePart, jenistransaksi code]
+  const kinds: [string, string, string, string][] = [
+    ["Interbank", "Interbank", "interbank", "TRI"],
+    ["Antarbank", "Antarbank", "intrabank", "TRA"],
+    ["Pembayaran", "Pembayaran", "pembayaran", "BY"],
+    ["Belanja", "Belanja", "belanja", "BL"],
+    ["VA", prefix === "Phone" ? "Virtual Account" : "VA", "va", "IVA"],
+    ["Reversal", "Reversal", "reversal", "RV"],
+    ["Tarik Tunai", "Tarik Tunai", "tarik", "TT"],
+    ["Setor Tunai", "Setor Tunai", "setor", "ST"],
   ];
   const out: SheetJob[] = [];
-  for (const [label, sheetSuffix, filePart] of kinds) {
+  for (const [label, sheetSuffix, filePart, trxCode] of kinds) {
     out.push({
       name: `${prefix} Vol ${label}`,
       sheetName: `${sheetPrefix} Vol ${sheetSuffix}`,
-      fileHints: [`${filePrefix}_${filePart}`, `${filePrefix}${filePart}`],
+      fileHints: [
+        `${filePrefix}_${filePart}`,
+        `${filePrefix}${filePart}`,
+        "delivery channel",
+        "delivery_channel",
+        "deliverychannel",
+      ],
       valueColumn: "expr_1",
       divideBy: 1,
       spreadsheetEnv: P,
+      filterChannel: channelCode,
+      filterJenis: trxCode,
     });
     out.push({
       name: `${prefix} Nom ${label}`,
       sheetName: `${sheetPrefix} Nom ${sheetSuffix}`,
-      fileHints: [`${filePrefix}_${filePart}`, `${filePrefix}${filePart}`],
+      fileHints: [
+        `${filePrefix}_${filePart}`,
+        `${filePrefix}${filePart}`,
+        "delivery channel",
+        "delivery_channel",
+        "deliverychannel",
+      ],
       valueColumn: "expr_2",
       divideBy: 1_000_000,
       spreadsheetEnv: P,
+      filterChannel: channelCode,
+      filterJenis: trxCode,
     });
   }
   return out;
 }
 
 export const PROP_JOBS: SheetJob[] = [
-  ...propJobs("Phone", "Phone", "p"),
-  ...propJobs("Mobile", "Mobile", "m"),
-  ...propJobs("Internet", "Internet", "i"),
+  ...propJobs("Phone", "Phone", "p", "PH"),
+  ...propJobs("Mobile", "Mobile", "m", "SM"),
+  ...propJobs("Internet", "Internet", "i", "IN"),
 ];
 
 export const GROUPS: Record<string, SheetJob[]> = {
