@@ -52,7 +52,8 @@ export function buildValueMap(
   divideBy: number,
   keyColumn?: string,
   filterJenis?: string,
-  filterMesin?: string[]
+  filterMesin?: string[],
+  filterChannel?: string
 ): Map<string, number> {
   const map = new Map<string, number>();
   const keyNames = keyColumn
@@ -77,8 +78,24 @@ export function buildValueMap(
     if (filterJenis) {
       const jt = (
         pick(row, ["jenistransaksi", "JENIS_TRANSAKSI", "jenis"]) || ""
-      ).trim();
-      if (jt !== filterJenis) continue;
+      )
+        .trim()
+        .toUpperCase();
+      if (jt !== filterJenis.toUpperCase()) continue;
+    }
+
+    if (filterChannel) {
+      const ch = (
+        pick(row, [
+          "jenisdeliverychannel",
+          "JENIS_DELIVERY_CHANNEL",
+          "deliverychannel",
+          "channel",
+        ]) || ""
+      )
+        .trim()
+        .toUpperCase();
+      if (ch !== filterChannel.toUpperCase()) continue;
     }
 
     if (mesinSet) {
@@ -113,6 +130,7 @@ export function buildValueMap(
     } else if (isNominal) {
       valRaw = pick(row, [
         "expr_2",
+        "nominal",
         "sum(nominaltransaksi)",
         "nominaltransaksi",
         "NILAI_TRANSAKSI",
@@ -122,6 +140,7 @@ export function buildValueMap(
     } else if (isVolume) {
       valRaw = pick(row, [
         "expr_1",
+        "volume",
         "sum(frekuensitransaksi)",
         "frekuensitransaksi",
         "VOLUME_TRANSAKSI",
