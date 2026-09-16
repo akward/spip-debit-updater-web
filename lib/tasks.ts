@@ -149,22 +149,31 @@ export const FRAUD_PENYEBAB_JOBS: SheetJob[] = [
   { name: "Nom Act UE", sheetName: "Nom Act UE", fileHints: ["fraud_ue", "ue"], valueColumn: "expr_2", divideBy: 1_000_000, spreadsheetEnv: FP, keyColumn: "jenisfraud" },
 ];
 
+/**
+ * Prop Channel jobs.
+ * Sheet naming di spreadsheet tidak konsisten untuk VA:
+ * - Phone  → "Phone Vol Virtual Account" / "Phone Nom Virtual Account"
+ * - Mobile → "Mobile Vol VA" / "Mobile Nom VA"
+ * - Internet → biasanya "Internet Vol VA" (jika ada)
+ * Label job tetap singkat (Phone Vol VA) agar mudah dibaca di UI.
+ */
 function propJobs(prefix: string, sheetPrefix: string, filePrefix: string): SheetJob[] {
   const kinds: [string, string, string][] = [
     ["Interbank", "Interbank", "interbank"],
     ["Antarbank", "Antarbank", "intrabank"],
     ["Pembayaran", "Pembayaran", "pembayaran"],
     ["Belanja", "Belanja", "belanja"],
-    ["VA", "VA", "va"],
+    // sheetSuffix khusus: Phone pakai "Virtual Account", yang lain "VA"
+    ["VA", prefix === "Phone" ? "Virtual Account" : "VA", "va"],
     ["Reversal", "Reversal", "reversal"],
     ["Tarik Tunai", "Tarik Tunai", "tarik"],
     ["Setor Tunai", "Setor Tunai", "setor"],
   ];
   const out: SheetJob[] = [];
-  for (const [label, , filePart] of kinds) {
+  for (const [label, sheetSuffix, filePart] of kinds) {
     out.push({
       name: `${prefix} Vol ${label}`,
-      sheetName: `${sheetPrefix} Vol ${label}`,
+      sheetName: `${sheetPrefix} Vol ${sheetSuffix}`,
       fileHints: [`${filePrefix}_${filePart}`, `${filePrefix}${filePart}`],
       valueColumn: "expr_1",
       divideBy: 1,
@@ -172,7 +181,7 @@ function propJobs(prefix: string, sheetPrefix: string, filePrefix: string): Shee
     });
     out.push({
       name: `${prefix} Nom ${label}`,
-      sheetName: `${sheetPrefix} Nom ${label}`,
+      sheetName: `${sheetPrefix} Nom ${sheetSuffix}`,
       fileHints: [`${filePrefix}_${filePart}`, `${filePrefix}${filePart}`],
       valueColumn: "expr_2",
       divideBy: 1_000_000,
