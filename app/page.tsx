@@ -48,7 +48,7 @@ const GROUPS = [
     id: "prop_channel",
     title: "Prop Channel",
     lsbu: null,
-    lsbuNote: "Tanpa LSBU",
+    lsbuNote: "Tanpa LSBU — wajib upload Delivery Channel.csv",
   },
   {
     id: "spasial_atm",
@@ -504,7 +504,11 @@ export default function HomePage() {
                 multiple
                 onChange={(e) => setFiles(e.target.files)}
               />
-              <p className="field-note">Opsional — kosong = salin bulan sebelumnya</p>
+              <p className="field-note">
+                {group === "prop_channel"
+                  ? "Wajib: upload Delivery Channel.csv (satu file berisi semua kanal)"
+                  : "Opsional — kosong = salin bulan sebelumnya"}
+              </p>
             </label>
 
             <label className="field">
@@ -548,44 +552,31 @@ export default function HomePage() {
                 checked={dryRun}
                 onChange={(e) => setDryRun(e.target.checked)}
               />
-              <span>Dry-run (simulasi saja, tidak menulis data)</span>
+              <span>Dry-run (tidak menulis ke Google Sheet)</span>
             </label>
+          </div>
 
-            <div className="btn-row">
+          <div className="actions">
+            <button type="submit" className="btn btn-primary" disabled={loading}>
+              {loading ? "Memproses…" : dryRun ? "Dry-run" : "Proses"}
+            </button>
+            {!group.startsWith("spasial_") && (
               <button
-                className="btn btn-primary"
-                type="submit"
-                disabled={loading || analyzeLoading}
+                type="button"
+                className="btn btn-secondary"
+                disabled={analyzeLoading}
+                onClick={onAnalyze}
               >
-                {loading ? "Memproses…" : dryRun ? "Jalankan dry-run" : "Proses & tulis"}
+                {analyzeLoading
+                  ? "Menganalisa…"
+                  : `Analisa anomali (${GROUPS.find((g) => g.id === group)?.title || group})`}
               </button>
-              {!group.startsWith("spasial_") && (
-                <button
-                  className="btn btn-secondary"
-                  type="button"
-                  disabled={loading || analyzeLoading}
-                  onClick={() => onAnalyze()}
-                  title="Tandai kuning sel anomali di kolom bulan terakhir (Vol/Nom/Count; bukan Spasial)"
-                >
-                  {analyzeLoading
-                    ? "Analisa…"
-                    : `Analisa anomali (${GROUPS.find((g) => g.id === group)?.title || group})`}
-                </button>
-              )}
-            </div>
+            )}
           </div>
         </form>
 
-        {progress && (
-          <p className="status status-progress">
-            <strong>Progress:</strong> {progress}
-          </p>
-        )}
-        {error && (
-          <p className="status status-error">
-            <strong>Error:</strong> {error}
-          </p>
-        )}
+        {progress && <p className="progress">{progress}</p>}
+        {error && <p className="error-banner">{error}</p>}
       </section>
 
       {displayRows.length > 0 && (
@@ -593,23 +584,8 @@ export default function HomePage() {
           <div className="panel-head">
             <h2>Hasil</h2>
           </div>
-          {log?.summary && (
-            <div className="summary-row">
-              <span className="chip chip-muted">Total {log.summary.total}</span>
-              <span className="chip chip-ok">OK {log.summary.ok}</span>
-              <span className={`chip ${log.summary.errors ? "chip-err" : "chip-muted"}`}>
-                Error {log.summary.errors}
-              </span>
-              {log.monthLabel ? (
-                <span className="chip chip-muted">Bulan: {log.monthLabel}</span>
-              ) : null}
-              {log.dryRun ? (
-                <span className="chip chip-muted">dry-run</span>
-              ) : null}
-            </div>
-          )}
           <div className="table-wrap">
-            <table>
+            <table className="result-table">
               <thead>
                 <tr>
                   <th>Job</th>
@@ -632,11 +608,14 @@ export default function HomePage() {
                       <td className={`status-cell ${stClass}`}>{st}</td>
                       <td className="detail-mono">
                         {r.file ? `file=${String(r.file)} ` : ""}
+                        {r.ids != null ? `ids=${String(r.ids)} ` : ""}
+                        {r.filterChannel ? `ch=${String(r.filterChannel)} ` : ""}
+                        {r.filterJenis ? `jenis=${String(r.filterJenis)} ` : ""}
                         {r.spatialKeys != null
                           ? `spatial=${String(r.spatialKeys)} `
                           : ""}
                         {r.lsbuKeys != null ? `lsbu=${String(r.lsbuKeys)} ` : ""}
-                        {r.reason ? String(r.reason) : ""}
+                        {r.reason ? String(r.reason) + " " : ""}
                         {r.column ? `col=${String(r.column)} ` : ""}
                         {r.written != null ? `written=${String(r.written)}` : ""}
                       </td>
@@ -654,38 +633,26 @@ export default function HomePage() {
           <div className="panel-head">
             <h2>Hasil analisa anomali</h2>
             <p className="panel-hint">
-              Kolom bulan terakhir diwarnai kuning jika mencurigakan (rule nol + z-score; Vol/Nom/Count). Tidak untuk Spasial.
+              {analyzeLog.totalFlagged != null
+                ? `${analyzeLog.totalFlagged} sel ditandai`
+                : ""}
             </p>
           </div>
-          <div className="summary-row">
-            <span className="chip chip-muted">
-              Ditandai {analyzeLog.totalFlagged ?? 0} sel
-            </span>
-          </div>
-          {analyzeLog.sheets && (
+          {analyzeLog.error && <p className="error-banner">{analyzeLog.error}</p>}
+          {analyzeLog.sheets && analyzeLog.sheets.length > 0 && (
             <div className="table-wrap">
-              <table>
+              <table className="result-table">
                 <thead>
                   <tr>
                     <th>Sheet</th>
-                    <th>Jenis</th>
-                    <th>Bulan</th>
-                    <th>Flag</th>
-                    <th>Ket</th>
+                    <th>Detail</th>
                   </tr>
                 </thead>
                 <tbody>
                   {analyzeLog.sheets.map((s, i) => (
                     <tr key={i}>
-                      <td>{String(s.sheet ?? "")}</td>
-                      <td>{String(s.kind ?? "")}</td>
-                      <td>{String(s.latestMonth ?? "-")}</td>
-                      <td>{String(s.flagged ?? 0)}</td>
-                      <td className="detail-mono">
-                        {s.skipped
-                          ? String(s.skipped)
-                          : `hist=${Array.isArray(s.histMonths) ? s.histMonths.join(", ") : ""} rows=${String(s.rowsScanned ?? "")}`}
-                      </td>
+                      <td>{String(s.sheet ?? s.name ?? "")}</td>
+                      <td className="detail-mono">{JSON.stringify(s)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -697,7 +664,7 @@ export default function HomePage() {
 
       <section className="panel">
         <div className="panel-head">
-          <h2>Download Excel (format lengkap)</h2>
+          <h2>Unduh template</h2>
         </div>
         <ul className="download-list">
           {DOWNLOAD_ITEMS.map((d) => (
