@@ -110,13 +110,11 @@ function pickPropChannelFile(
         )
       : [];
     let score = 0;
-    // Nama file
     if (b.includes("delivery") && b.includes("channel")) score += 100;
     else if (b.includes("delivery_channel") || b.includes("deliverychannel")) score += 100;
     else if (b.includes("prop_channel") || b.includes("prop channel") || b.includes("propchannel"))
       score += 80;
     else if (b.includes("delivery") || b.includes("kanal")) score += 40;
-    // Struktur kolom (lebih andal daripada nama file)
     const hasChannel = keys.some(
       (k) =>
         k.includes("jenisdeliverychannel") ||
@@ -134,7 +132,6 @@ function pickPropChannelFile(
   }
   scored.sort((a, b) => b.score - a.score);
   if (scored[0] && scored[0].score >= 100) return scored[0].f;
-  // Fallback: satu-satunya CSV yang di-upload untuk group prop
   if (parsed.length === 1) return parsed[0];
   return scored[0]?.f;
 }
@@ -389,12 +386,21 @@ export async function processOneJob(opts: {
       }
       matrixSourceIds = seen.size;
     }
+    const dryStatus =
+      group === "prop_channel" && !file
+        ? "error"
+        : source === "none" && !map.size && !matrixSourceIds
+          ? "dry-run-copy-previous"
+          : "dry-run";
     outRows.push({
       job: job.name,
-      status:
-        source === "none" && !map.size && !matrixSourceIds
-          ? "dry-run-copy-previous"
-          : "dry-run",
+      status: dryStatus,
+      reason:
+        group === "prop_channel" && !file
+          ? `CSV tidak terdeteksi. Upload Delivery Channel.csv. File masuk: ${
+              parsed.map((p) => p.name).join(", ") || "(kosong)"
+            }`
+          : undefined,
       sheet: job.sheetName,
       kind: job.kind || "column",
       file: file?.name || null,
@@ -407,6 +413,7 @@ export async function processOneJob(opts: {
       filterMesin: job.filterMesin || null,
       filterChannel: job.filterChannel || null,
       sample: [...map.entries()].slice(0, 3),
+      uploaded: parsed.map((p) => p.name),
     });
     return outRows;
   }
@@ -462,23 +469,50 @@ export async function processOneJob(opts: {
     return outRows;
   }
 
+  if (group === "prop_channel" && !file) {
+    const names = parsed.map((p) => p.name).join(", ") || "(kosong)";
+    outRows.push({
+      job: job.name,
+      status: "error",
+      reason: `CSV tidak terdeteksi. Upload "Delivery Channel.csv". File masuk: ${names}`,
+      sheet: job.sheetName,
+      file: null,
+      ids: 0,
+      source: "none",
+      uploaded: parsed.map((p) => p.name),
+    });
+    return outRows;
+  }
+
   const out = await updateMonthColumn({
     spreadsheetId,
     sheetName: job.sheetName,
     monthLabel,
     valuesById: map,
     copyIfEmpty: true,
-    // All non-Spasial column jobs (Spasial uses separate write path)
     applyBorders: true,
   });
+
+  let status: string = out.mode === "write" ? "ok" : out.mode;
+  let reason: string | undefined;
+  if (out.mode !== "write" && file) {
+    reason =
+      map.size === 0
+        ? `filter kosong channel=${job.filterChannel || "-"} jenis=${job.filterJenis || "-"}`
+        : `map=${map.size} id tapi nilai 0 / tidak match sheet`;
+  }
+
   outRows.push({
     job: job.name,
-    status: out.mode === "write" ? "ok" : out.mode,
+    status,
+    reason,
     sheet: job.sheetName,
     file: file?.name || null,
     ids: map.size,
     monthLabel,
     source,
+    filterChannel: job.filterChannel || null,
+    filterJenis: job.filterJenis || null,
     ...out,
   });
   return outRows;
